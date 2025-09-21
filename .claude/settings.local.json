@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__create_directory",
+      "mcp__filesystem__write_file",
+      "Bash(python -m pytest tests/unit/ -v --tb=short)",
+      "Bash(python:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

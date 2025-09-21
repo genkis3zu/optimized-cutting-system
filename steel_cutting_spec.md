@@ -33,6 +33,11 @@ numpy >= 1.24.0
 plotly >= 5.15.0
 matplotlib >= 3.7.0
 openpyxl >= 3.1.0  # Excelファイル対応
+pydantic >= 2.0.0  # データ検証
+aiofiles >= 23.0.0  # 非同期I/O
+fastapi >= 0.100.0  # REST API
+redis >= 4.6.0  # キャッシュ管理
+python-multipart >= 0.0.6  # ファイルアップロード
 ```
 
 ### 2.3 動作環境
@@ -125,6 +130,42 @@ openpyxl >= 3.1.0  # Excelファイル対応
 - 履歴管理（最近の計画）
 - テンプレート保存機能
 
+### 3.4 統合・連携機能
+
+#### 3.4.1 外部システム統合
+- **ERP/MES連携**
+  - REST API経由でのデータ交換
+  - CSV/XML形式でのバッチインポート/エクスポート
+  - リアルタイム在庫連携
+  - 生産計画との同期
+
+#### 3.4.2 エラーハンドリングとリカバリ
+```python
+class OptimizationError(Exception):
+    """最適化エラーの基底クラス"""
+    def __init__(self, message: str, recovery_actions: List[str] = None):
+        self.message = message
+        self.recovery_actions = recovery_actions or []
+        super().__init__(self.message)
+
+class TimeoutError(OptimizationError):
+    """タイムアウトエラー"""
+    def __init__(self, best_solution_so_far: PlacementResult = None):
+        super().__init__("最適化がタイムアウトしました")
+        self.best_solution = best_solution_so_far
+        self.recovery_actions = [
+            "現在の最良解を使用",
+            "時間制約を緩和して再実行",
+            "より高速なアルゴリズムに切り替え"
+        ]
+```
+
+#### 3.4.3 同時実行制御
+- **排他制御**: 複数ユーザーの同時アクセス管理
+- **セッション分離**: ユーザーごとの独立した作業環境
+- **リソース管理**: CPU/メモリ使用量の監視と制限
+- **キュー管理**: 長時間処理のバックグラウンド実行
+
 ## 4. データ構造設計
 
 ### 4.1 パネルデータ構造
@@ -146,16 +187,64 @@ class Panel:
         return (50 <= self.width <= 1500 and 
                 50 <= self.height <= 3100)
 
-@dataclass 
-class TextDataParser:
-    """テキストデータ解析クラス"""
+@dataclass
+class RobustTextParser:
+    """堅牢なテキストデータ解析クラス"""
     raw_data: str        # 元テキストデータ
     delimiter: str       # 区切り文字
     format_type: str     # データフォーマット種類
-    
-    def parse_to_panels(self) -> List[Panel]:
-        """テキストデータをパネルリストに変換"""
-        pass
+    encoding: str = 'utf-8'  # 文字エンコーディング
+    unit_system: str = 'mm'  # 単位系（mm/inch）
+
+    def detect_format(self) -> str:
+        """データフォーマットを自動検出"""
+        if '\t' in self.raw_data[:100]:
+            return 'tsv'
+        elif ',' in self.raw_data[:100]:
+            return 'csv'
+        elif self.raw_data.startswith('{'):
+            return 'json'
+        else:
+            return 'fixed_width'
+
+    def validate_and_fix(self, panels: List[Panel]) -> List[Panel]:
+        """データ検証と自動修正"""
+        fixed_panels = []
+        for panel in panels:
+            # サイズ制約チェックと修正
+            if panel.width > 1500 or panel.height > 3100:
+                # 回転を試みる
+                if panel.height <= 1500 and panel.width <= 3100:
+                    panel.width, panel.height = panel.height, panel.width
+            # 単位変換（inch→mm）
+            if self.unit_system == 'inch':
+                panel.width *= 25.4
+                panel.height *= 25.4
+            fixed_panels.append(panel)
+        return fixed_panels
+
+    def parse_to_panels(self) -> Tuple[List[Panel], List[str]]:
+        """テキストデータをパネルリストに変換（エラーリスト付き）"""
+        panels = []
+        errors = []
+        try:
+            format_type = self.detect_format() if not self.format_type else self.format_type
+            # フォーマット別パース処理
+            if format_type == 'csv':
+                panels = self._parse_csv()
+            elif format_type == 'tsv':
+                panels = self._parse_tsv()
+            elif format_type == 'json':
+                panels = self._parse_json()
+            else:
+                panels = self._parse_fixed_width()
+
+            # 検証と修正
+            panels = self.validate_and_fix(panels)
+        except Exception as e:
+            errors.append(f"Parse error: {str(e)}")
+
+        return panels, errors
 ```
 
 ### 4.2 母材データ構造
@@ -203,6 +292,27 @@ class WorkInstruction:
     cutting_sequence: List[CuttingInstruction]
     quality_checkpoints: List[str]
     safety_notes: List[str]
+    machine_constraints: Dict[str, Any]  # 機械固有の制約
+
+@dataclass
+class QualityCheckpoint:
+    """品質チェックポイント"""
+    checkpoint_id: str
+    step_number: int
+    measurement_points: List[Tuple[float, float]]
+    tolerance: float  # 許容誤差（mm）
+    inspection_method: str  # 検査方法
+    critical: bool  # クリティカルチェックポイントか
+
+@dataclass
+class MachineConstraints:
+    """機械制約"""
+    machine_id: str
+    max_cutting_length: float  # 最大切断長（mm）
+    min_cutting_length: float  # 最小切断長（mm）
+    blade_width: float  # ブレード幅（mm）
+    cutting_speed: float  # 切断速度（mm/s）
+    blade_wear_factor: float  # ブレード摩耗係数
 ```
 
 ## 5. アルゴリズム仕様
@@ -215,21 +325,55 @@ class WorkInstruction:
 
 ### 5.2 最適化アルゴリズム
 
-#### 5.2.1 First Fit Decreasing (FFD)
-- **特徴**: 高速、実装容易
-- **手順**: 
+#### 5.2.1 階層型最適化戦略
+```python
+@dataclass
+class OptimizationStrategy:
+    """問題複雑度に応じた適応的アルゴリズム選択"""
+    def select_algorithm(self, complexity: float, time_budget: float) -> str:
+        if complexity < 0.3 and time_budget > 1.0:
+            return "FFD"  # 高速、約70-75%効率
+        elif complexity < 0.7 and time_budget > 5.0:
+            return "BFD"  # バランス型、約80-85%効率
+        elif time_budget > 30.0:
+            return "HYBRID"  # 最適化重視、85%+効率
+        else:
+            return "FFD_WITH_TIMEOUT"  # タイムアウト付き高速処理
+
+    def estimate_complexity(self, panels: List[Panel]) -> float:
+        """パネル数、サイズ多様性、回転可否から複雑度を算出"""
+        diversity = len(set((p.width, p.height) for p in panels))
+        return min(1.0, (len(panels) * diversity) / 1000)
+```
+
+#### 5.2.2 First Fit Decreasing (FFD)
+- **特徴**: 高速、実装容易、材料効率70-75%
+- **処理時間**: O(n log n)
+- **適用条件**: パネル数≤10または時間制約≤1秒
+- **手順**:
   1. パネルを面積降順ソート
   2. Bottom-Left戦略で配置
   3. フィットしない場合は新しい母材
 
-#### 5.2.2 Best Fit Decreasing (BFD)  
-- **特徴**: FFDより高効率
+#### 5.2.3 Best Fit Decreasing (BFD)
+- **特徴**: FFDより高効率、材料効率80-85%
+- **処理時間**: O(n² log n)
+- **適用条件**: パネル数≤30かつ時間制約≤5秒
 - **手順**:
   1. 各パネルに対し全空き領域をスコア計算
   2. 最小無駄面積の位置に配置
   3. ギロチン制約でエリア分割
 
-#### 5.2.3 Bottom-Left-Fill (BLF)
+#### 5.2.4 Hybrid Progressive Optimization
+- **特徴**: 段階的最適化、材料効率85%以上
+- **処理時間**: 時間制約内でベストエフォート
+- **手順**:
+  1. FFDで初期解生成（1秒以内）
+  2. BFDで改善（5秒まで）
+  3. 局所探索で微調整（残り時間）
+  4. タイムアウト時は現在の最良解を返却
+
+#### 5.2.5 Bottom-Left-Fill (BLF)
 - **特徴**: ギロチン制約に最適化
 - **手順**:
   1. 左下詰めでパネル配置
@@ -254,15 +398,53 @@ class WorkInstruction:
 
 ## 6. パフォーマンス要件
 
-### 6.1 処理時間目標
-- **小規模** (パネル数≤20): 1秒以内
-- **中規模** (パネル数≤50): 5秒以内  
-- **大規模** (パネル数≤100): 30秒以内
+### 6.1 処理時間目標（現実的な期待値）
+
+#### 複雑度別処理時間
+| パネル数 | 複雑度 | アルゴリズム | 目標時間 | 期待効率 |
+|---------|-------|------------|---------|----------|
+| ≤10 | 低 | FFD | <1秒 | 70-75% |
+| ≤10 | 高 | BFD | <3秒 | 80-85% |
+| ≤30 | 低 | FFD | <2秒 | 70-75% |
+| ≤30 | 高 | BFD/Hybrid | <10秒 | 80-85% |
+| ≤50 | 任意 | Hybrid | <15秒 | 75-85% |
+| ≤100 | 任意 | Hybrid+Timeout | <30秒 | ベストエフォート |
+
+**注意**: 実際の処理時間はパネルの多様性、回転可否、制約条件により変動
 
 ### 6.2 メモリ使用量
-- **最大使用量**: 512MB以内
+- **最大使用量**: 512MB以内（大規模データ時は1GBまで許容）
 - **起動時間**: 3秒以内
 - **レスポンス時間**: UI操作後1秒以内
+- **キャッシュ戦略**: LRUキャッシュで頻繁な計算を最適化
+
+### 6.4 アーキテクチャ最適化
+```python
+from functools import lru_cache
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+
+class PerformanceOptimizer:
+    def __init__(self):
+        self.cache_size = 1000
+        self.executor = ProcessPoolExecutor(max_workers=4)
+
+    @lru_cache(maxsize=1000)
+    def calculate_placement_score(self, layout_hash: str) -> float:
+        """配置スコアのキャッシュ"""
+        pass
+
+    async def optimize_with_progress(self, panels, callback):
+        """非同期最適化とプログレス通知"""
+        quick_solution = await self.run_ffd_async(panels)
+        await callback(quick_solution, progress=0.3)
+
+        if time_available():
+            better_solution = await self.run_bfd_async(panels)
+            await callback(better_solution, progress=0.7)
+
+        return await self.finalize_solution()
+```
 
 ### 6.3 最適化品質
 - **効率目標**: 手動作業比10-20%向上
@@ -296,17 +478,25 @@ steel_cutting_optimizer/
 ├── config/
 │   ├── settings.py       # 設定定数
 │   ├── algorithms.py     # アルゴリズム設定
-│   └── constraints.py    # 制約条件設定
+│   ├── constraints.py    # 制約条件設定
+│   └── performance.py    # 性能プロファイル設定
 ├── core/
 │   ├── models.py         # データ構造定義
 │   ├── optimizer.py      # 最適化エンジン
 │   ├── guillotine.py     # ギロチンパッキング
-│   ├── text_parser.py    # テキストデータパーサー
+│   ├── text_parser.py    # 堅牢なテキストパーサー
+│   ├── error_handler.py  # エラーハンドリング
+│   ├── cache.py          # キャッシュ管理
 │   └── utils.py          # ユーティリティ
 ├── cutting/
 │   ├── instruction.py    # 切断作業指示生成
 │   ├── sequence.py       # 切断順序最適化
-│   └── validator.py      # サイズ・制約バリデーター
+│   ├── validator.py      # サイズ・制約バリデーター
+│   └── quality.py        # 品質チェックポイント管理
+├── integration/
+│   ├── api.py            # REST APIエンドポイント
+│   ├── erp_connector.py  # ERP/MES連携
+│   └── session.py        # セッション管理
 ├── ui/
 │   ├── components.py     # UIコンポーネント
 │   ├── visualizer.py     # 可視化機能
@@ -320,50 +510,65 @@ steel_cutting_optimizer/
     ├── test_optimizer.py # テストコード
     ├── test_models.py    # モデルテスト
     ├── test_parser.py    # パーサーテスト
-    └── test_constraints.py # 制約テスト
+    ├── test_constraints.py # 制約テスト
+    ├── test_performance.py # 性能テスト
+    └── benchmark/        # ベンチマークデータ
 ```
 
-## 9. 開発段階
+## 9. 開発段階（現実的なスケジュール）
 
-### Phase 1: コア機能開発 (2-3週間)
-- [ ] データ構造実装
-- [ ] テキストデータパーサー実装
-- [ ] 基本UI構築  
-- [ ] FFDアルゴリズム実装
-- [ ] サイズ制約チェック (50-3100mm, W≤1500mm)
-- [ ] 簡単な可視化機能
+### Phase 0: 事前準備・要件明確化 (1週間)
+- [ ] 要件詳細明確化セッション
+- [ ] アルゴリズム性能ベンチマーク
+- [ ] 現実的なテストデータセット作成
+- [ ] 統合ポイントの特定
+- [ ] 性能目標の再設定
 
-### Phase 2: 最適化強化 (2週間)
+### Phase 1: コア機能開発 (3週間)
+- [ ] データ構造実装とユニットテスト
+- [ ] 堅牢なテキストパーサー実装（複数フォーマット対応）
+- [ ] FFDアルゴリズムと性能測定
+- [ ] 基本UI構築とプログレス表示
+- [ ] サイズ制約検証とエラーハンドリング
+- [ ] 簡単な可視化機能（キャッシュ付き）
+
+### Phase 2: 最適化強化 (3週間)
 - [ ] BFDアルゴリズム追加
+- [ ] ハイブリッドアルゴリズム実装
+- [ ] タイムアウト処理と最良解保存
 - [ ] ギロチン制約強化
 - [ ] 材質別ブロック化処理
-- [ ] 上から下への切断順序実装
-- [ ] パフォーマンス最適化
-- [ ] エラーハンドリング
+- [ ] パフォーマンス最適化（キャッシング、並列処理）
 
-### Phase 3: 作業指示機能拡張 (2-3週間)  
+### Phase 3: 作業指示・統合機能 (3週間)
 - [ ] 切断作業指示生成機能
-- [ ] ステップバイステップ手順書
-- [ ] 切断順序の可視化
-- [ ] 残材管理機能
-- [ ] 高度な可視化（作業指示レベル）
+- [ ] 品質チェックポイント統合
+- [ ] 機械制約考慮
+- [ ] ERP/MESシステム統合API
 - [ ] Excel/PDF詳細出力
+- [ ] 同時アクセス制御
 
-### Phase 4: テスト・改善 (1週間)
-- [ ] 統合テスト
-- [ ] 性能テスト（1500×3100mmデータ）
-- [ ] ユーザビリティテスト
-- [ ] 作業指示の実用性検証
-- [ ] バグ修正・改善
+### Phase 4: テスト・最終調整 (2週間)
+- [ ] 統合テストとストレステスト
+- [ ] 実データでの性能検証
+- [ ] 現場ユーザーテスト
+- [ ] フィードバック反映
+- [ ] パフォーマンスチューニング
+- [ ] ドキュメント整備
+
+**合計開発期間**: 12週間（約3ヶ月）
 
 ## 10. 成功基準
 
-### 10.1 定量的指標
-- 材料効率: 85%以上達成
-- 処理時間: 要件内完了率95%以上
+### 10.1 定量的指標（改訂版）
+- 材料効率:
+  - FFD: 70-75%以上
+  - BFD: 80-85%以上
+  - Hybrid: 85%以上（ベストエフォート）
+- 処理時間: 複雑度別目標内完了90%以上
 - システム稼働率: 99%以上
 - サイズ制約: 50-3100mm範囲での100%対応
-- 作業指示生成: 切断ステップ数≤最適解+10%
+- エラーリカバリ: タイムアウト時の最良解提供100%
 
 ### 10.2 定性的指標
 - ユーザビリティ: 直感的操作可能
@@ -386,6 +591,29 @@ steel_cutting_optimizer/
 - OR-Tools (Google Optimization Tools)
 - COIN-OR Cut Stock Problem solvers
 
+## 12. リスク管理と緩和策
+
+### 12.1 技術リスク
+| リスク | 影響 | 確率 | 緩和策 |
+|--------|------|------|--------|
+| アルゴリズム性能不足 | 高 | 中 | 階層型最適化、タイムアウト処理 |
+| パーサーエラー | 中 | 高 | 複数フォーマット対応、自動検出 |
+| スケーラビリティ | 中 | 中 | キャッシュ、並列処理 |
+| 統合の複雑さ | 中 | 中 | API標準化、段階的統合 |
+
+### 12.2 パフォーマンス監視
+```python
+class PerformanceMonitor:
+    """パフォーマンス監視と早期警告"""
+    def monitor_optimization(self, process):
+        if process.memory_usage > MEMORY_THRESHOLD:
+            self.trigger_memory_optimization()
+        if process.time_elapsed > TIME_BUDGET * 0.8:
+            self.prepare_timeout_recovery()
+        if process.efficiency < TARGET_EFFICIENCY:
+            self.suggest_algorithm_switch()
+```
+
 ---
 
-**重要事項**: この仕様書は開発プロセスで継続的に更新・改善していく生きた文書とする。
+**重要事項**: この仕様書は開発プロセスで継続的に更新・改善していく生きた文書とする。特にアルゴリズム性能の実測値に基づいて目標を調整する。

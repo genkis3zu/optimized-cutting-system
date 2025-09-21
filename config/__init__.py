@@ -1,0 +1,1 @@
+# Configuration module for steel cutting optimization system

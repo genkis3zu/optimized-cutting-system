@@ -1,0 +1,38 @@
+# Core dependencies for steel cutting optimization system
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
+plotly>=5.15.0
+matplotlib>=3.7.0
+
+# Data validation and serialization
+pydantic>=2.0.0
+python-multipart>=0.0.6
+
+# Performance optimization
+numba>=0.57.0
+orjson>=3.8.0
+memory-profiler>=0.60.0
+psutil>=5.9.0
+
+# Japanese text processing
+jaconv>=0.3.0
+mojimoji>=0.0.12
+
+# Integration and API
+fastapi>=0.100.0
+uvicorn>=0.22.0
+httpx>=0.24.0
+redis>=4.6.0
+aiofiles>=23.0.0
+
+# Excel and file processing
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+pylint>=2.17.0
+mypy>=1.5.0
