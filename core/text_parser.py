@@ -26,10 +26,13 @@ except ImportError:
     MOJIMOJI_SUPPORT = False
 
 # Log status after imports
-if not JAPANESE_SUPPORT:
-    logging.warning("Japanese text processing libraries not available. Install jaconv and mojimoji for full support.")
-elif not MOJIMOJI_SUPPORT:
-    logging.info("jaconv installed. For full Japanese text support, install mojimoji as well.")
+logger = logging.getLogger(__name__)
+if JAPANESE_SUPPORT and MOJIMOJI_SUPPORT:
+    logger.info("Full Japanese text processing support available (jaconv + mojimoji).")
+elif JAPANESE_SUPPORT and not MOJIMOJI_SUPPORT:
+    logger.info("Japanese text processing with jaconv available. mojimoji not installed (optional).")
+elif not JAPANESE_SUPPORT:
+    logger.warning("Japanese text processing libraries not available. Install jaconv for support.")
 
 
 @dataclass

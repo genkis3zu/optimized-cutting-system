@@ -12,12 +12,10 @@ from typing import List, Optional
 import plotly.express as px
 
 from core.models import PlacementResult
-from ui.components import UIComponents
 
 
 def main():
     """Main analysis results page"""
-    ui = UIComponents()
 
     st.title("📊 分析結果 / Analysis Results")
     st.markdown("最適化結果の詳細分析とレポート / Detailed analysis and reports of optimization results")
