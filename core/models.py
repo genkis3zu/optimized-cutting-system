@@ -329,7 +329,7 @@ class OptimizationConstraints:
     kerf_width: float = 3.5  # mm - cutting allowance
     min_waste_piece: float = 50.0  # mm - minimum usable waste piece
     allow_rotation: bool = True
-    material_separation: bool = True  # Separate materials into blocks
+    material_separation: bool = False  # Enable multi-sheet optimization by default
     time_budget: float = 30.0  # seconds
     target_efficiency: float = 0.75  # 75%
     
