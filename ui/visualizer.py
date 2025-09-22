@@ -46,16 +46,17 @@ class CuttingLayoutVisualizer:
     def create_cutting_layout(self, result: PlacementResult,
                             show_cut_lines: bool = True,
                             show_measurements: bool = True) -> go.Figure:
-        """Create interactive cutting layout visualization"""
+        """Create interactive cutting layout visualization with swapped axes
+        X-axis: Height (horizontal), Y-axis: Width (vertical)"""
 
         # Create figure
         fig = go.Figure()
 
-        # Sheet outline
+        # Sheet outline - SWAPPED: X=Height, Y=Width
         fig.add_shape(
             type="rect",
             x0=0, y0=0,
-            x1=result.sheet.width, y1=result.sheet.height,
+            x1=result.sheet.height, y1=result.sheet.width,
             line=dict(color="black", width=3),
             fillcolor="lightgray",
             opacity=0.3
@@ -66,26 +67,28 @@ class CuttingLayoutVisualizer:
         if not self.panel_colors:
             self.panel_colors = self.generate_color_palette(panel_ids)
 
-        # Add placed panels
+        # Add placed panels - SWAPPED: X=Height, Y=Width
         for i, placed_panel in enumerate(result.panels):
             panel = placed_panel.panel
             color = self.panel_colors.get(panel.id, "lightblue")
 
-            # Panel rectangle
+            # Panel rectangle - SWAPPED coordinates
+            # Original: x=placed_panel.x (width), y=placed_panel.y (height)
+            # New: x=placed_panel.y (height), y=placed_panel.x (width)
             fig.add_shape(
                 type="rect",
-                x0=placed_panel.x,
-                y0=placed_panel.y,
-                x1=placed_panel.x + placed_panel.actual_width,
-                y1=placed_panel.y + placed_panel.actual_height,
+                x0=placed_panel.y,
+                y0=placed_panel.x,
+                x1=placed_panel.y + placed_panel.actual_height,
+                y1=placed_panel.x + placed_panel.actual_width,
                 line=dict(color="black", width=2),
                 fillcolor=color,
                 opacity=0.7
             )
 
-            # Panel label
-            center_x = placed_panel.x + placed_panel.actual_width / 2
-            center_y = placed_panel.y + placed_panel.actual_height / 2
+            # Panel label - SWAPPED coordinates
+            center_x = placed_panel.y + placed_panel.actual_height / 2
+            center_y = placed_panel.x + placed_panel.actual_width / 2
 
             rotation_text = " (R)" if placed_panel.rotated else ""
             label_text = f"{panel.id}<br>{placed_panel.actual_width:.0f}×{placed_panel.actual_height:.0f}{rotation_text}"
@@ -102,22 +105,22 @@ class CuttingLayoutVisualizer:
                 opacity=0.8
             )
 
-            # Show measurements if requested
+            # Show measurements if requested - SWAPPED coordinates and labels
             if show_measurements:
-                # Width measurement
+                # Height measurement (now horizontal)
                 fig.add_annotation(
                     x=center_x,
-                    y=placed_panel.y - 20,
-                    text=f"{placed_panel.actual_width:.0f}mm",
+                    y=placed_panel.x - 20,
+                    text=f"H:{placed_panel.actual_height:.0f}mm",
                     showarrow=False,
                     font=dict(size=8, color="blue")
                 )
 
-                # Height measurement
+                # Width measurement (now vertical)
                 fig.add_annotation(
-                    x=placed_panel.x - 30,
+                    x=placed_panel.y - 30,
                     y=center_y,
-                    text=f"{placed_panel.actual_height:.0f}mm",
+                    text=f"W:{placed_panel.actual_width:.0f}mm",
                     showarrow=False,
                     font=dict(size=8, color="blue"),
                     textangle=90
@@ -127,23 +130,23 @@ class CuttingLayoutVisualizer:
         if show_cut_lines:
             self._add_cut_lines(fig, result)
 
-        # Update layout
+        # Update layout - SWAPPED axis labels and ranges
         fig.update_layout(
             title=f"切断レイアウト / Cutting Layout - Sheet {result.sheet_id}<br>" +
                   f"材質: {result.material_block} | 効率: {result.efficiency:.1%} | " +
                   f"パネル数: {len(result.panels)}",
             xaxis=dict(
-                title="幅 / Width (mm)",
-                range=[0, result.sheet.width + 100],
+                title="高さ / Height (mm)",  # Now horizontal
+                range=[0, result.sheet.height + 100],
                 scaleanchor="y",
                 scaleratio=1
             ),
             yaxis=dict(
-                title="高さ / Height (mm)",
-                range=[0, result.sheet.height + 100]
+                title="幅 / Width (mm)",  # Now vertical
+                range=[0, result.sheet.width + 100]
             ),
             showlegend=False,
-            width=800,
+            width=900,  # Increased width for landscape orientation
             height=600,
             plot_bgcolor="white"
         )
@@ -151,42 +154,43 @@ class CuttingLayoutVisualizer:
         return fig
 
     def _add_cut_lines(self, fig: go.Figure, result: PlacementResult):
-        """Add cutting lines to visualization"""
-        # Collect all horizontal and vertical cut lines
-        h_lines = set()
-        v_lines = set()
+        """Add cutting lines to visualization with swapped coordinates"""
+        # Collect all horizontal and vertical cut lines - SWAPPED
+        h_lines = set()  # Now represent width cuts (vertical on display)
+        v_lines = set()  # Now represent height cuts (horizontal on display)
 
         for placed_panel in result.panels:
-            # Add panel boundaries as potential cut lines
-            h_lines.add(placed_panel.y)  # Bottom edge
-            h_lines.add(placed_panel.y + placed_panel.actual_height)  # Top edge
-            v_lines.add(placed_panel.x)  # Left edge
-            v_lines.add(placed_panel.x + placed_panel.actual_width)  # Right edge
+            # Add panel boundaries as potential cut lines - SWAPPED
+            # Original coordinates mapped to new coordinate system
+            h_lines.add(placed_panel.x)  # Left edge (now width)
+            h_lines.add(placed_panel.x + placed_panel.actual_width)  # Right edge (now width)
+            v_lines.add(placed_panel.y)  # Bottom edge (now height)
+            v_lines.add(placed_panel.y + placed_panel.actual_height)  # Top edge (now height)
 
-        # Add sheet boundaries
+        # Add sheet boundaries - SWAPPED
         h_lines.add(0)
-        h_lines.add(result.sheet.height)
+        h_lines.add(result.sheet.width)
         v_lines.add(0)
-        v_lines.add(result.sheet.width)
+        v_lines.add(result.sheet.height)
 
-        # Draw horizontal cut lines
+        # Draw horizontal cut lines (width cuts, now vertical on display)
         for y in h_lines:
-            if 0 <= y <= result.sheet.height:
+            if 0 <= y <= result.sheet.width:
                 fig.add_shape(
                     type="line",
                     x0=0, y0=y,
-                    x1=result.sheet.width, y1=y,
+                    x1=result.sheet.height, y1=y,
                     line=dict(color="red", width=1, dash="dash"),
                     opacity=0.5
                 )
 
-        # Draw vertical cut lines
+        # Draw vertical cut lines (height cuts, now horizontal on display)
         for x in v_lines:
-            if 0 <= x <= result.sheet.width:
+            if 0 <= x <= result.sheet.height:
                 fig.add_shape(
                     type="line",
                     x0=x, y0=0,
-                    x1=x, y1=result.sheet.height,
+                    x1=x, y1=result.sheet.width,
                     line=dict(color="red", width=1, dash="dash"),
                     opacity=0.5
                 )
@@ -477,18 +481,40 @@ def render_cutting_visualization(results: List[PlacementResult]):
 
     visualizer = CuttingLayoutVisualizer()
 
-    # Visualization options
+    # Initialize session state for visualization options if not exists
+    if 'viz_show_cut_lines' not in st.session_state:
+        st.session_state.viz_show_cut_lines = True
+    if 'viz_show_measurements' not in st.session_state:
+        st.session_state.viz_show_measurements = True
+    if 'viz_selected_sheet' not in st.session_state:
+        st.session_state.viz_selected_sheet = 0
+    if 'viz_show_details' not in st.session_state:
+        st.session_state.viz_show_details = False
+    if 'viz_show_analysis' not in st.session_state:
+        st.session_state.viz_show_analysis = True
+
+    # Visualization options with persistent state
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        show_cut_lines = st.checkbox("切断線表示 / Show Cut Lines", value=True)
+        show_cut_lines = st.checkbox(
+            "切断線表示 / Show Cut Lines",
+            value=st.session_state.viz_show_cut_lines,
+            key="viz_show_cut_lines"
+        )
     with col2:
-        show_measurements = st.checkbox("寸法表示 / Show Measurements", value=True)
+        show_measurements = st.checkbox(
+            "寸法表示 / Show Measurements",
+            value=st.session_state.viz_show_measurements,
+            key="viz_show_measurements"
+        )
     with col3:
         sheet_index = st.selectbox(
             "シート選択 / Select Sheet",
             range(len(results)),
-            format_func=lambda x: f"Sheet {x+1} ({results[x].material_block})"
+            format_func=lambda x: f"Sheet {x+1} ({results[x].material_block})",
+            index=min(st.session_state.viz_selected_sheet, len(results)-1),
+            key="viz_selected_sheet"
         )
 
     # Individual sheet layout
@@ -502,8 +528,11 @@ def render_cutting_visualization(results: List[PlacementResult]):
     )
     st.plotly_chart(layout_fig, use_container_width=True)
 
-    # Sheet details
-    with st.expander("シート詳細情報 / Sheet Details"):
+    # Sheet details with persistent state
+    with st.expander(
+        "シート詳細情報 / Sheet Details",
+        expanded=st.session_state.viz_show_details
+    ):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -520,9 +549,16 @@ def render_cutting_visualization(results: List[PlacementResult]):
             st.write(f"- 廃棄面積 / Waste Area: {selected_result.waste_area:,.0f} mm²")
             st.write(f"- 切断長 / Cut Length: {selected_result.cut_length:,.0f} mm")
 
-    # Analysis charts if multiple sheets
-    if len(results) > 1:
+    # Analysis charts if multiple sheets with persistent display
+    if len(results) > 1 and st.session_state.viz_show_analysis:
         st.write("### 分析チャート / Analysis Charts")
+
+        # Show/hide analysis charts toggle
+        col_toggle, col_space = st.columns([1, 3])
+        with col_toggle:
+            if st.button("📊 チャート表示切替", key="toggle_analysis_charts"):
+                st.session_state.viz_show_analysis = not st.session_state.viz_show_analysis
+                st.rerun()
 
         tab1, tab2 = st.tabs(["効率分析 / Efficiency Analysis", "材質分析 / Material Analysis"])
 
@@ -533,3 +569,9 @@ def render_cutting_visualization(results: List[PlacementResult]):
         with tab2:
             material_fig = visualizer.create_material_distribution_chart(results)
             st.plotly_chart(material_fig, use_container_width=True)
+
+    elif len(results) > 1 and not st.session_state.viz_show_analysis:
+        # Show button to display analysis charts
+        if st.button("📊 分析チャートを表示 / Show Analysis Charts", key="show_analysis_charts"):
+            st.session_state.viz_show_analysis = True
+            st.rerun()

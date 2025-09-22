@@ -410,8 +410,8 @@ def render_enhanced_results(results: List[PlacementResult]):
         </div>
         """, unsafe_allow_html=True)
 
-    # Enhanced material usage analysis
-    render_material_usage_analysis(results)
+    # Navigation to detailed analysis
+    render_analysis_navigation(results)
 
     # Interactive visualization with coordinate system update
     from ui.visualizer import render_cutting_visualization
@@ -421,111 +421,28 @@ def render_enhanced_results(results: List[PlacementResult]):
     render_export_options(results)
 
 
-def render_material_usage_analysis(results: List[PlacementResult]):
-    """Render detailed material usage analysis"""
-    st.subheader("📊 材料使用分析 / Material Usage Analysis")
+def render_analysis_navigation(results: List[PlacementResult]):
+    """Render navigation to detailed analysis page"""
+    st.subheader("📊 詳細分析 / Detailed Analysis")
 
-    # Material usage summary table
-    material_usage = {}
-    panel_placement_details = []
+    # Quick summary
+    total_sheets = len(results)
+    total_panels = sum(len(result.panels) for result in results)
+    avg_efficiency = sum(result.efficiency for result in results) / len(results) * 100 if results else 0
 
-    for i, result in enumerate(results, 1):
-        sheet_id = f"Sheet_{i:03d}"
-        material_type = result.material_block
-
-        if material_type not in material_usage:
-            material_usage[material_type] = {
-                'sheets_used': 0,
-                'total_panels': 0,
-                'total_efficiency': 0,
-                'total_cost': 0,
-                'total_area': 0,
-                'total_waste': 0
-            }
-
-        material_usage[material_type]['sheets_used'] += 1
-        material_usage[material_type]['total_panels'] += len(result.panels)
-        material_usage[material_type]['total_efficiency'] += result.efficiency
-        material_usage[material_type]['total_cost'] += result.cost
-        material_usage[material_type]['total_area'] += result.sheet.area
-        material_usage[material_type]['total_waste'] += result.waste_area
-
-        # Panel placement details
-        for placed_panel in result.panels:
-            panel_placement_details.append({
-                'シートID / Sheet ID': sheet_id,
-                '材質 / Material': material_type,
-                'パネルID / Panel ID': placed_panel.panel.id,
-                '配置位置 / Position': f"({placed_panel.x:.0f}, {placed_panel.y:.0f})",
-                'サイズ / Size': f"{placed_panel.actual_width:.0f}×{placed_panel.actual_height:.0f}mm",
-                '回転 / Rotated': '○' if placed_panel.rotated else '×',
-                '面積 / Area (mm²)': f"{placed_panel.actual_width * placed_panel.actual_height:,.0f}"
-            })
-
-    # Material usage summary
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.markdown("#### 📈 材質別使用状況 / Material Usage Summary")
-        usage_data = []
-        for material, data in material_usage.items():
-            avg_efficiency = (data['total_efficiency'] / data['sheets_used']) * 100
-            usage_data.append({
-                '材質 / Material': material,
-                'シート数 / Sheets': data['sheets_used'],
-                'パネル数 / Panels': data['total_panels'],
-                '平均効率 / Avg Efficiency (%)': f"{avg_efficiency:.1f}",
-                'コスト / Cost (¥)': f"{data['total_cost']:,.0f}",
-                '廃棄面積 / Waste (mm²)': f"{data['total_waste']:,.0f}"
-            })
-
-        usage_df = pd.DataFrame(usage_data)
-        st.dataframe(usage_df, use_container_width=True, hide_index=True)
-
+        st.metric("使用シート数", f"{total_sheets:,}")
     with col2:
-        # Cost breakdown chart
-        import plotly.express as px
-        if material_usage:
-            fig = px.bar(
-                x=list(material_usage.keys()),
-                y=[data['total_cost'] for data in material_usage.values()],
-                title="材質別コスト分布 / Cost Distribution by Material",
-                labels={'x': 'Material Type', 'y': 'Total Cost (JPY)'},
-                color_discrete_sequence=['#1f77b4']
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+        st.metric("配置パネル数", f"{total_panels:,}")
+    with col3:
+        st.metric("平均効率", f"{avg_efficiency:.1f}%")
+    with col4:
+        if st.button("📊 詳細分析を見る", type="primary", use_container_width=True):
+            st.switch_page("pages/4_📊_Analysis_Results.py")
 
-    # Detailed panel placement table
-    if st.checkbox("📋 詳細配置情報を表示 / Show Detailed Placement", value=False):
-        st.markdown("#### 🎯 パネル配置詳細 / Panel Placement Details")
-        placement_df = pd.DataFrame(panel_placement_details)
-
-        # Add filtering options
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_materials = st.multiselect(
-                "材質フィルタ / Material Filter",
-                options=list(material_usage.keys()),
-                default=list(material_usage.keys())
-            )
-        with col2:
-            selected_sheets = st.multiselect(
-                "シートフィルタ / Sheet Filter",
-                options=placement_df['シートID / Sheet ID'].unique(),
-                default=placement_df['シートID / Sheet ID'].unique()
-            )
-
-        # Apply filters
-        filtered_df = placement_df[
-            (placement_df['材質 / Material'].isin(selected_materials)) &
-            (placement_df['シートID / Sheet ID'].isin(selected_sheets))
-        ]
-
-        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-        # Summary of filtered results
-        st.info(f"📊 表示中: {len(filtered_df)} / {len(placement_df)} パネル配置")
+    st.info("💡 詳細な材料使用分析、コスト内訳、パフォーマンス情報は専用の分析ページで確認できます")
 
 
 def render_export_options(results: List[PlacementResult]):
@@ -692,10 +609,59 @@ def save_optimization_results(results: List[PlacementResult]):
         st.error(f"結果保存エラー: {str(e)}")
 
 
+def render_sidebar_help():
+    """Render usage help in sidebar"""
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 🚀 使用方法 / How to Use")
+
+        with st.expander("📋 基本的な流れ / Basic Flow", expanded=False):
+            st.markdown("""
+            1. **パネル入力** - ファイルアップロードまたはテキストデータでパネル情報を入力
+            2. **材料検証** - 入力されたパネルが材料在庫と照合されます
+            3. **最適化実行** - アルゴリズムを選択して実行
+            4. **結果確認** - 切断レイアウト、効率、コストを確認
+            """)
+
+        with st.expander("📁 ファイル形式 / File Formats", expanded=False):
+            st.markdown("""
+            **対応形式 / Supported Formats:**
+            - TSV形式 (data0923.txt形式)
+            - CSV形式
+            - JSON形式
+
+            **必須項目 / Required Fields:**
+            - 製造番号, PI, W, H, 数量, 材質, 板厚
+            """)
+
+        with st.expander("💡 最適化のヒント / Optimization Tips", expanded=False):
+            st.markdown("""
+            - パネルの回転を許可すると効率が向上します
+            - 材質別分離により品質が向上します
+            - 薄板切断では切断代を0に設定済み
+            - PIコードによる寸法展開が自動実行されます
+            """)
+
+        with st.expander("⚙️ 技術情報 / Technical Info", expanded=False):
+            st.markdown("""
+            **アルゴリズム / Algorithms:**
+            - FFD: 高速、基本効率
+            - BFD: 中速、高効率
+            - GA: 低速、最高効率
+            - HYBRID: バランス型
+
+            **制約 / Constraints:**
+            - ギロチンカット制約
+            - 最小パネルサイズ: 50×50mm
+            - 最大シートサイズ: 1500×3100mm
+            """)
+
+
 def main():
     """Main function for cutting optimization page"""
     setup_page()
     render_page_header()
+    render_sidebar_help()
 
     # Check material inventory status
     material_manager = get_material_manager()
@@ -756,30 +722,9 @@ def main():
                 render_enhanced_results(st.session_state.optimization_results)
 
     else:
-        # Welcome message with usage instructions
-        st.markdown("""
-        ### 🚀 使用方法 / How to Use
-
-        1. **パネル入力 / Panel Input**
-           - 手動入力、テキストデータ、またはファイルアップロードでパネル情報を入力
-           - Manual input, text data, or file upload for panel information
-
-        2. **材料検証 / Material Validation**
-           - 入力されたパネルが材料在庫と照合されます
-           - Input panels are validated against material inventory
-
-        3. **最適化実行 / Run Optimization**
-           - 最適化アルゴリズムを選択して実行
-           - Select optimization algorithm and execute
-
-        4. **結果確認 / Review Results**
-           - 切断レイアウト、効率、コストを確認
-           - Review cutting layout, efficiency, and cost
-
-        ### 💡 ヒント / Tips
-        - より良い結果のために、パネルの回転を許可することをお勧めします
-        - For better results, consider allowing panel rotation
-        """)
+        # Show brief welcome message when no panels are entered
+        st.info("📋 パネル情報を入力して最適化を開始してください / Please enter panel information to start optimization")
+        st.markdown("詳しい使用方法は左のサイドバーをご確認ください / Please check the sidebar for detailed usage instructions")
 
 
 if __name__ == "__main__":

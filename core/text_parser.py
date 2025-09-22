@@ -364,14 +364,22 @@ class RobustTextParser:
 
     def parse_manufacturing_tsv(self, raw_data: str) -> Tuple[List[Panel], List[ParseError]]:
         """
-        Parse manufacturing TSV format like data0923.txt
-        製造用TSV形式（data0923.txt等）をパース
+        Parse manufacturing TSV format like data0923.txt with PI code expansion
+        PIコード展開付き製造用TSV形式（data0923.txt等）をパース
 
         Expected format columns:
         製造番号 PI 部材名 W H 寸法3 数量 識別番号 品名 色 板厚 ...
         """
         panels = []
         errors = []
+
+        # Import PI manager for dimension expansion
+        try:
+            from core.pi_manager import get_pi_manager
+            pi_manager = get_pi_manager()
+        except ImportError:
+            pi_manager = None
+            errors.append(ParseError(0, "PI manager not available for dimension expansion", "parse_manufacturing_tsv"))
 
         lines = raw_data.strip().split('\n')
         header_found = False
@@ -423,16 +431,32 @@ class RobustTextParser:
                 if not material:
                     material = 'SECC'  # Default for steel panels
 
+                # Apply PI code expansion for cutting dimensions
+                cutting_width, cutting_height = width, height  # Default to finished dimensions
+                if pi_code and pi_manager:
+                    try:
+                        expanded_width, expanded_height = pi_manager.get_expansion_for_panel(pi_code, width, height)
+                        cutting_width, cutting_height = expanded_width, expanded_height
+                        self.logger.debug(f"PI {pi_code}: {width}x{height} -> {cutting_width}x{cutting_height}")
+                    except Exception as e:
+                        errors.append(ParseError(
+                            line_num, line,
+                            f"PI code expansion failed for {pi_code}: {str(e)}",
+                            "Check PI code definition or use finished dimensions"
+                        ))
+
                 panel = Panel(
                     id=panel_id,
-                    width=width,
-                    height=height,
+                    width=cutting_width,  # Use expanded cutting dimensions
+                    height=cutting_height,  # Use expanded cutting dimensions
                     quantity=quantity,
                     material=material,
                     thickness=thickness,
                     priority=1,
                     allow_rotation=True,
-                    pi_code=pi_code
+                    pi_code=pi_code,
+                    expanded_width=cutting_width,
+                    expanded_height=cutting_height
                 )
 
                 panels.append(panel)
@@ -481,10 +505,20 @@ class RobustTextParser:
 
     def parse_cutting_data_tsv(self, raw_data: str) -> Tuple[List[Panel], List[ParseError]]:
         """
-        Parse data0923.txt format - Japanese cutting data
+        Parse data0923.txt format - Japanese cutting data with PI code expansion
+        PIコード展開付きJapanese cutting data解析
         """
         panels = []
         errors = []
+
+        # Import PI manager for dimension expansion
+        try:
+            from core.pi_manager import get_pi_manager
+            pi_manager = get_pi_manager()
+        except ImportError:
+            pi_manager = None
+            errors.append(ParseError(0, "PI manager not available for dimension expansion", "parse_cutting_data_tsv"))
+
         lines = raw_data.strip().split('\n')
 
         # Find header line (contains 製造番号)
@@ -562,16 +596,32 @@ class RobustTextParser:
                     if part_name:
                         panel_id = f"{manufacturing_no}_{part_name}"
 
+                # Apply PI code expansion for cutting dimensions
+                cutting_width, cutting_height = width, height  # Default to finished dimensions
+                if pi_code and pi_manager:
+                    try:
+                        expanded_width, expanded_height = pi_manager.get_expansion_for_panel(pi_code, width, height)
+                        cutting_width, cutting_height = expanded_width, expanded_height
+                        self.logger.debug(f"PI {pi_code}: {width}x{height} -> {cutting_width}x{cutting_height}")
+                    except Exception as e:
+                        errors.append(ParseError(
+                            line_num, line,
+                            f"PI code expansion failed for {pi_code}: {str(e)}",
+                            "Check PI code definition or use finished dimensions"
+                        ))
+
                 panel = Panel(
                     id=panel_id,
-                    width=width,
-                    height=height,
+                    width=cutting_width,  # Use expanded cutting dimensions
+                    height=cutting_height,  # Use expanded cutting dimensions
                     quantity=quantity,
                     material=material,
                     thickness=thickness,
                     priority=1,
                     allow_rotation=True,
-                    pi_code=pi_code
+                    pi_code=pi_code,
+                    expanded_width=cutting_width,
+                    expanded_height=cutting_height
                 )
                 panels.append(panel)
 

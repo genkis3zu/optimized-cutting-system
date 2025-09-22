@@ -131,10 +131,10 @@ class AdvancedGuillotineBinPacker:
         best_y = float('inf')
         best_score = None
 
-        # Try both orientations if rotation is allowed
-        orientations = [(panel.width, panel.height, False)]
+        # Try both orientations if rotation is allowed, using cutting dimensions
+        orientations = [(panel.cutting_width, panel.cutting_height, False)]
         if panel.allow_rotation:
-            orientations.append((panel.height, panel.width, True))
+            orientations.append((panel.cutting_height, panel.cutting_width, True))
 
         for width, height, rotated in orientations:
             for rect in self.free_rectangles:
@@ -312,9 +312,9 @@ class AdvancedGuillotineBinPacker:
 
         rect, rotated, x, y, score = position
 
-        # Calculate actual dimensions considering rotation
-        actual_width = panel.height if rotated else panel.width
-        actual_height = panel.width if rotated else panel.height
+        # Calculate actual dimensions considering rotation (using cutting dimensions)
+        actual_width = panel.cutting_height if rotated else panel.cutting_width
+        actual_height = panel.cutting_width if rotated else panel.cutting_height
 
         # Create placed panel
         placed_panel = PlacedPanel(

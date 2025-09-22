@@ -129,6 +129,7 @@ class OptimizationAlgorithm(ABC):
         配置結果の検証
         """
         try:
+            # Re-enable overlap validation after fixing FFD algorithm
             placement.validate_no_overlaps()
             placement.validate_within_bounds()
             return True
@@ -537,10 +538,14 @@ class OptimizationEngine:
                             results.append(result)
 
                             # Remove placed panels from remaining list
-                            placed_panel_ids = set(p.panel.id for p in result.panels)
+                            # Fix: Handle individual panel IDs correctly (e.g., "562210_1", "562210_2")
                             new_remaining = []
                             for panel in remaining_panels:
-                                placed_count = sum(1 for p in result.panels if p.panel.id == panel.id)
+                                # Count how many individual panels with base ID were placed
+                                base_id = panel.id
+                                placed_count = sum(1 for p in result.panels
+                                                 if p.panel.id == base_id or p.panel.id.startswith(f"{base_id}_"))
+
                                 if placed_count < panel.quantity:
                                     # Create panel with reduced quantity
                                     remaining_panel = Panel(
@@ -558,6 +563,13 @@ class OptimizationEngine:
                                         expanded_height=panel.expanded_height
                                     )
                                     new_remaining.append(remaining_panel)
+
+                                    self.logger.debug(
+                                        f"Panel {base_id}: {placed_count}/{panel.quantity} placed, "
+                                        f"{remaining_panel.quantity} remaining"
+                                    )
+                                else:
+                                    self.logger.debug(f"Panel {base_id}: All {panel.quantity} panels placed")
                             remaining_panels = new_remaining
 
                             self.logger.info(

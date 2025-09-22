@@ -12,7 +12,6 @@ import json
 import os
 
 from core.material_manager import MaterialInventoryManager, MaterialSheet, get_material_manager
-from core.text_parser import parse_material_data_file
 
 
 class MaterialManagementUI:
@@ -26,7 +25,6 @@ class MaterialManagementUI:
 
         self.ui_text = {
             'title': '材料在庫管理 / Material Inventory Management',
-            'load_sample': 'サンプルデータ読み込み / Load Sample Data',
             'add_material': '材料追加 / Add Material',
             'edit_material': '材料編集 / Edit Material',
             'delete_material': '材料削除 / Delete Material',
@@ -42,9 +40,7 @@ class MaterialManagementUI:
             'supplier': 'サプライヤー / Supplier',
             'save': '保存 / Save',
             'cancel': 'キャンセル / Cancel',
-            'confirm_delete': '削除確認 / Confirm Delete',
-            'export_inventory': '在庫エクスポート / Export Inventory',
-            'import_inventory': '在庫インポート / Import Inventory'
+            'confirm_delete': '削除確認 / Confirm Delete'
         }
 
     def render(self):
@@ -52,11 +48,10 @@ class MaterialManagementUI:
         st.title(self.ui_text['title'])
 
         # Create tabs for different functions
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3 = st.tabs([
             "📊 在庫概要 / Overview",
             "📋 材料一覧 / Material List",
-            "➕ 材料管理 / Manage Materials",
-            "⚙️ 設定 / Settings"
+            "➕ 材料管理 / Manage Materials"
         ])
 
         with tab1:
@@ -67,9 +62,6 @@ class MaterialManagementUI:
 
         with tab3:
             self._render_material_management()
-
-        with tab4:
-            self._render_settings()
 
     def _render_inventory_overview(self):
         """Render inventory overview"""
@@ -119,8 +111,8 @@ class MaterialManagementUI:
         st.subheader(self.ui_text['material_list'])
 
         if not self.manager.inventory:
-            st.info("材料在庫がありません。サンプルデータを読み込むか、手動で追加してください。")
-            st.info("No materials in inventory. Load sample data or add manually.")
+            st.info("材料在庫がありません。手動で材料を追加してください。")
+            st.info("No materials in inventory. Please add materials manually.")
             return
 
         # Filters
@@ -444,85 +436,6 @@ class MaterialManagementUI:
                 with col2:
                     if st.button("キャンセル / Cancel"):
                         st.info("削除をキャンセルしました / Deletion cancelled")
-
-    def _render_settings(self):
-        """Render settings and data import/export"""
-        st.write("### 設定とデータ管理 / Settings and Data Management")
-
-        # Sample data loading
-        st.subheader("サンプルデータ読み込み / Load Sample Data")
-
-        sample_file = "sample_data/sizaidata.txt"
-        if os.path.exists(sample_file):
-            st.info(f"サンプルファイル: {sample_file} が利用可能です")
-
-            if st.button("📥 サンプルデータ読み込み / Load Sample Data", type="primary"):
-                added_count = self.manager.load_from_sample_data(sample_file)
-                if added_count > 0:
-                    st.success(f"{added_count} 個の新しい材料を追加しました / Added {added_count} new materials")
-                    st.rerun()
-                else:
-                    st.info("新しい材料はありませんでした / No new materials to add")
-        else:
-            st.warning(f"サンプルファイル {sample_file} が見つかりません")
-
-        st.divider()
-
-        # Export/Import
-        st.subheader("データエクスポート・インポート / Data Export/Import")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write("**エクスポート / Export**")
-            if st.button("📤 在庫データエクスポート / Export Inventory"):
-                export_file = f"config/material_inventory_export_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json"
-                if self.manager.export_inventory(export_file):
-                    st.success(f"エクスポート完了: {export_file}")
-
-                    # Provide download link
-                    try:
-                        with open(export_file, 'r', encoding='utf-8') as f:
-                            export_data = f.read()
-                        st.download_button(
-                            "📁 ファイルダウンロード / Download File",
-                            data=export_data,
-                            file_name=os.path.basename(export_file),
-                            mime="application/json"
-                        )
-                    except Exception as e:
-                        st.error(f"ダウンロード準備エラー: {e}")
-                else:
-                    st.error("エクスポートに失敗しました")
-
-        with col2:
-            st.write("**インポート / Import**")
-            uploaded_file = st.file_uploader(
-                "在庫データファイルを選択 / Select Inventory File",
-                type=['json'],
-                help="エクスポートしたJSON形式のファイルをアップロード"
-            )
-
-            if uploaded_file is not None:
-                try:
-                    import_data = json.load(uploaded_file)
-                    if 'sheets' in import_data:
-                        st.info(f"インポート予定: {len(import_data['sheets'])} 材料")
-
-                        if st.button("📥 インポート実行 / Execute Import"):
-                            imported_count = 0
-                            for sheet_data in import_data['sheets']:
-                                sheet = MaterialSheet(**sheet_data)
-                                if self.manager.add_material_sheet(sheet):
-                                    imported_count += 1
-
-                            st.success(f"{imported_count} 個の材料をインポートしました")
-                            st.rerun()
-                    else:
-                        st.error("無効なファイル形式です")
-
-                except Exception as e:
-                    st.error(f"インポートエラー: {e}")
 
 
 def render_material_management():

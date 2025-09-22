@@ -73,7 +73,7 @@ class GuillotineBinPacker:
         """
         Find best position for panel using Bottom-Left-Fill strategy
         Bottom-Left-Fill戦略を使用してパネルの最適位置を検索
-        
+
         Returns: (rectangle, rotated, x, y) or None
         """
         best_rect = None
@@ -81,43 +81,69 @@ class GuillotineBinPacker:
         best_x = float('inf')
         best_y = float('inf')
         best_area_fit = float('inf')
-        
-        # Try both orientations if rotation is allowed
-        orientations = [(panel.width, panel.height, False)]
+
+        # Try both orientations if rotation is allowed, using cutting dimensions
+        orientations = [(panel.cutting_width, panel.cutting_height, False)]
         if panel.allow_rotation:
-            orientations.append((panel.height, panel.width, True))
-        
+            orientations.append((panel.cutting_height, panel.cutting_width, True))
+
         for width, height, rotated in orientations:
             for rect in self.free_rectangles:
                 if rect.can_fit(width, height):
+                    # Check for overlap with existing placed panels
+                    if self._would_overlap(rect.x, rect.y, width, height):
+                        continue  # Skip this position if it would overlap
+
                     # Bottom-left scoring: prioritize bottom, then left
                     y_score = rect.y
                     x_score = rect.x
                     area_fit = rect.area - (width * height)
-                    
+
                     # Better position criteria:
                     # 1. Lower Y coordinate (bottom preference)
-                    # 2. Lower X coordinate (left preference) 
+                    # 2. Lower X coordinate (left preference)
                     # 3. Better area fit (less waste)
                     is_better = (
                         y_score < best_y or
                         (y_score == best_y and x_score < best_x) or
                         (y_score == best_y and x_score == best_x and area_fit < best_area_fit)
                     )
-                    
+
                     if is_better:
                         best_rect = rect
                         best_rotated = rotated
                         best_x = rect.x
                         best_y = rect.y
                         best_area_fit = area_fit
-        
+
         if best_rect:
             width = panel.height if best_rotated else panel.width
             height = panel.width if best_rotated else panel.height
             return best_rect, best_rotated, best_x, best_y
-        
+
         return None
+
+    def _would_overlap(self, x: float, y: float, width: float, height: float) -> bool:
+        """
+        Check if placing a panel at given position would overlap with existing panels
+        指定位置にパネルを配置した場合の既存パネルとの重複チェック
+        """
+        new_x1, new_y1 = x, y
+        new_x2, new_y2 = x + width, y + height
+
+        for placed_panel in self.placed_panels:
+            # Get bounds of existing panel
+            existing_x1 = placed_panel.x
+            existing_y1 = placed_panel.y
+            existing_x2 = placed_panel.x + placed_panel.actual_width
+            existing_y2 = placed_panel.y + placed_panel.actual_height
+
+            # Check for overlap (not just touching - actual overlap)
+            if not (new_x2 <= existing_x1 or new_x1 >= existing_x2 or
+                    new_y2 <= existing_y1 or new_y1 >= existing_y2):
+                return True
+
+        return False
     
     def place_panel(self, panel: Panel) -> bool:
         """
@@ -130,9 +156,9 @@ class GuillotineBinPacker:
         
         rect, rotated, x, y = position
         
-        # Calculate actual dimensions considering rotation
-        actual_width = panel.height if rotated else panel.width
-        actual_height = panel.width if rotated else panel.height
+        # Calculate actual dimensions considering rotation (using cutting dimensions)
+        actual_width = panel.cutting_height if rotated else panel.cutting_width
+        actual_height = panel.cutting_width if rotated else panel.cutting_height
         
         # Create placed panel
         placed_panel = PlacedPanel(
