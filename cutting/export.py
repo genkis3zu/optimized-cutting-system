@@ -286,7 +286,10 @@ class DocumentExporter:
             )
         }
 
-        return {**styles, **custom_styles}
+        # Merge styles properly for ReportLab StyleSheet1
+        for name, style in custom_styles.items():
+            styles.add(style)
+        return styles
 
     def _create_title_page(self, work_instruction: WorkInstruction) -> List[Any]:
         """Create title page elements"""

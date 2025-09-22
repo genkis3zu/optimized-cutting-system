@@ -9,6 +9,7 @@ with guillotine cut constraints.
 import streamlit as st
 import logging
 import time
+import pandas as pd
 from typing import List, Optional
 
 # Import core modules
@@ -16,8 +17,8 @@ from core.models import Panel, SteelSheet, PlacementResult
 from core.optimizer import create_optimization_engine
 from core.algorithms.ffd import create_ffd_algorithm
 from ui.components import (
-    PanelInputComponent, 
-    SteelSheetComponent, 
+    PanelInputComponent,
+    SteelSheetComponent,
     OptimizationSettingsComponent
 )
 
@@ -75,20 +76,20 @@ def create_visualization_placeholder(result: PlacementResult) -> str:
     return viz
 
 
-def render_results(results: List[PlacementResult]):
-    """Render optimization results"""
+def render_enhanced_results(results: List[PlacementResult]):
+    """Render enhanced optimization results with visualization"""
     if not results:
         st.warning("最適化結果がありません / No optimization results")
         return
-    
+
     st.success(f"✅ 最適化完了 / Optimization completed: {len(results)} sheet(s)")
-    
+
     # Summary metrics
     total_panels = sum(len(result.panels) for result in results)
     avg_efficiency = sum(result.efficiency for result in results) / len(results)
     total_cost = sum(result.cost for result in results)
     total_time = sum(result.processing_time for result in results)
-    
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("配置パネル数 / Placed Panels", total_panels)
@@ -98,25 +99,180 @@ def render_results(results: List[PlacementResult]):
         st.metric("総コスト / Total Cost", f"¥{total_cost:,.0f}")
     with col4:
         st.metric("処理時間 / Processing Time", f"{total_time:.2f}s")
-    
-    # Individual results
-    for i, result in enumerate(results, 1):
-        with st.expander(f"Sheet {i}: {result.material_block} - {result.efficiency:.1%} efficiency"):
-            col_info, col_viz = st.columns([1, 2])
-            
-            with col_info:
-                st.write("**詳細情報 / Details:**")
-                st.write(f"- アルゴリズム / Algorithm: {result.algorithm}")
-                st.write(f"- 配置パネル数 / Placed Panels: {len(result.panels)}")
-                st.write(f"- 効率 / Efficiency: {result.efficiency:.1%}")
-                st.write(f"- 無駄面積 / Waste Area: {result.waste_area:,.0f} mm²")
-                st.write(f"- 切断長 / Cut Length: {result.cut_length:,.0f} mm")
-                st.write(f"- 処理時間 / Time: {result.processing_time:.3f}s")
-            
-            with col_viz:
-                st.write("**配置図 / Layout:**")
-                visualization = create_visualization_placeholder(result)
-                st.text(visualization)
+
+    # Interactive visualization
+    from ui.visualizer import render_cutting_visualization
+    render_cutting_visualization(results)
+
+    # Export options
+    st.subheader("📤 エクスポート / Export Options")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("📋 作業指示書生成 / Generate Work Instructions"):
+            generate_work_instructions(results)
+
+    with col2:
+        if st.button("📊 レポート出力 / Export Report"):
+            export_optimization_report(results)
+
+    with col3:
+        if st.button("💾 結果保存 / Save Results"):
+            save_optimization_results(results)
+
+
+def generate_work_instructions(results: List[PlacementResult]):
+    """Generate work instructions for cutting"""
+    try:
+        from cutting.instruction import WorkInstructionGenerator
+        from cutting.sequence import CuttingSequenceOptimizer
+
+        generator = WorkInstructionGenerator()
+        optimizer = CuttingSequenceOptimizer()
+
+        with st.spinner("作業指示書を生成中... / Generating work instructions..."):
+            for i, result in enumerate(results, 1):
+                # Optimize cutting sequence
+                optimized_sequence = optimizer.optimize_sequence(
+                    result.panels,
+                    result.sheet,
+                    strategy="efficiency_first"
+                )
+
+                # Generate work instruction
+                work_instruction = generator.generate_work_instruction(
+                    sheet_id=f"SHEET_{i:03d}",
+                    placed_panels=optimized_sequence,
+                    sheet_specs=result.sheet,
+                    constraints={
+                        'kerf_width': 3.5,
+                        'material_type': result.material_block
+                    }
+                )
+
+                st.success(f"✅ Sheet {i} 作業指示書生成完了")
+
+                # Display key information
+                with st.expander(f"📋 Sheet {i} 作業指示書詳細"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.write("**基本情報:**")
+                        st.write(f"- シートID: {work_instruction.sheet_id}")
+                        st.write(f"- 材質: {work_instruction.material_type}")
+                        st.write(f"- ステップ数: {work_instruction.total_steps}")
+                        st.write(f"- 予想時間: {work_instruction.estimated_total_time:.1f}分")
+
+                    with col2:
+                        st.write("**品質情報:**")
+                        st.write(f"- 複雑度: {work_instruction.complexity_score:.2f}")
+                        st.write(f"- 切断長: {work_instruction.total_cut_length:.0f}mm")
+                        st.write(f"- 安全注意: {len(work_instruction.safety_notes)}項目")
+
+    except Exception as e:
+        st.error(f"作業指示書生成エラー: {str(e)}")
+
+
+def export_optimization_report(results: List[PlacementResult]):
+    """Export optimization report"""
+    try:
+        from cutting.export import DocumentExporter
+        import tempfile
+        import os
+
+        exporter = DocumentExporter()
+
+        with st.spinner("レポートを出力中... / Exporting report..."):
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                # Export efficiency report
+                success = exporter.export_efficiency_report_excel(
+                    results=results,
+                    file_path=tmp_file.name.replace('.pdf', '.xlsx'),
+                    include_charts=True
+                )
+
+                if success:
+                    st.success("✅ レポート出力完了")
+
+                    # Provide download button
+                    with open(tmp_file.name.replace('.pdf', '.xlsx'), 'rb') as f:
+                        st.download_button(
+                            "📁 レポートダウンロード / Download Report",
+                            data=f.read(),
+                            file_name=f"optimization_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+
+                    # Clean up
+                    os.unlink(tmp_file.name.replace('.pdf', '.xlsx'))
+                else:
+                    st.error("レポート出力に失敗しました")
+
+    except Exception as e:
+        st.error(f"レポート出力エラー: {str(e)}")
+
+
+def save_optimization_results(results: List[PlacementResult]):
+    """Save optimization results to session storage"""
+    try:
+        import json
+        from datetime import datetime
+
+        # Prepare data for storage
+        results_data = {
+            'timestamp': datetime.now().isoformat(),
+            'total_sheets': len(results),
+            'summary': {
+                'total_panels': sum(len(r.panels) for r in results),
+                'average_efficiency': sum(r.efficiency for r in results) / len(results),
+                'total_cost': sum(r.cost for r in results),
+                'total_time': sum(r.processing_time for r in results)
+            },
+            'sheets': []
+        }
+
+        for i, result in enumerate(results, 1):
+            sheet_data = {
+                'sheet_id': f"SHEET_{i:03d}",
+                'material': result.material_block,
+                'algorithm': result.algorithm,
+                'efficiency': result.efficiency,
+                'panels_count': len(result.panels),
+                'waste_area': result.waste_area,
+                'cut_length': result.cut_length,
+                'processing_time': result.processing_time,
+                'panels': [
+                    {
+                        'id': p.panel.id,
+                        'x': p.x,
+                        'y': p.y,
+                        'width': p.actual_width,
+                        'height': p.actual_height,
+                        'rotated': p.rotated
+                    }
+                    for p in result.panels
+                ]
+            }
+            results_data['sheets'].append(sheet_data)
+
+        # Store in session state
+        st.session_state.saved_results = results_data
+
+        st.success("✅ 結果を保存しました / Results saved successfully")
+
+        # Show summary
+        with st.expander("保存された結果サマリー / Saved Results Summary"):
+            st.json(results_data['summary'])
+
+    except Exception as e:
+        st.error(f"結果保存エラー: {str(e)}")
+
+
+def render_results(results: List[PlacementResult]):
+    """Legacy render results (kept for compatibility)"""
+    render_enhanced_results(results)
 
 
 def run_optimization(panels: List[Panel], sheet: SteelSheet, algorithm: str, constraints):
@@ -172,30 +328,85 @@ def main():
     """Main application function"""
     setup_logging()
     setup_page_config()
+
+    # Sidebar for navigation
+    with st.sidebar:
+        st.header("ナビゲーション / Navigation")
+
+        page = st.radio(
+            "ページ選択 / Select Page",
+            ['optimization', 'material_management'],
+            format_func=lambda x: {
+                'optimization': '🔧 最適化 / Optimization',
+                'material_management': '📦 材料管理 / Material Management'
+            }[x]
+        )
+
+        st.divider()
+
+    if page == 'optimization':
+        render_optimization_page()
+    elif page == 'material_management':
+        render_material_management_page()
+
+
+def render_optimization_page():
+    """Render optimization page"""
     render_header()
-    
+
     # Sidebar for input
     with st.sidebar:
         st.header("入力設定 / Input Settings")
         
-        # Panel input component
+        # Panel input component with material validation
+        from core.material_manager import get_material_manager
+        material_manager = get_material_manager()
+
+        # Auto-load sample data if empty
+        if len(material_manager.inventory) == 0:
+            st.info("材料在庫が空です。サンプルデータを読み込み中...")
+            sample_file = "sample_data/sizaidata.txt"
+            if os.path.exists(sample_file):
+                added_count = material_manager.load_from_sample_data(sample_file)
+                if added_count > 0:
+                    st.success(f"{added_count}個の材料を読み込みました")
+
         panel_component = PanelInputComponent()
         panels = panel_component.render()
-        
+
+        # Material validation for panels
+        if panels:
+            st.write("### 材料検証 / Material Validation")
+            validation_issues = []
+            for panel in panels:
+                is_valid, message = material_manager.validate_panel_against_inventory(
+                    panel.material, panel.thickness, panel.width, panel.height
+                )
+                if not is_valid:
+                    validation_issues.append(f"⚠️ Panel {panel.id}: {message}")
+
+            if validation_issues:
+                with st.expander("⚠️ 材料検証エラー / Material Validation Issues"):
+                    for issue in validation_issues:
+                        st.warning(issue)
+                    st.info("材料管理ページで在庫を確認・追加してください")
+            else:
+                st.success("✅ すべてのパネルで材料検証が通りました")
+
         st.divider()
-        
+
         # Steel sheet component
         sheet_component = SteelSheetComponent()
         sheet = sheet_component.render()
-        
+
         st.divider()
-        
+
         # Optimization settings
         settings_component = OptimizationSettingsComponent()
         algorithm, constraints = settings_component.render()
-        
+
         st.divider()
-        
+
         # Optimization button
         optimize_button = st.button(
             "🚀 最適化実行 / Run Optimization",
@@ -203,69 +414,73 @@ def main():
             disabled=len(panels) == 0,
             use_container_width=True
         )
-    
-    # Main content area
+
+    # Main content area - show panel details if requested
+    if hasattr(st.session_state, 'show_panel_details') and st.session_state.show_panel_details and panels:
+        from ui.visualizer import render_panel_details
+        render_panel_details(panels, show_validation=True)
+
+        if st.button("パネル詳細を閉じる / Close Panel Details"):
+            st.session_state.show_panel_details = False
+            st.rerun()
+
+        st.divider()
+
+    # Optimization execution and results
     if optimize_button and panels:
-        st.header("最適化結果 / Optimization Results")
-        
+        st.header("🚀 最適化結果 / Optimization Results")
+
         with st.spinner("最適化を実行中... / Running optimization..."):
             results = run_optimization(panels, sheet, algorithm, constraints)
-        
-        render_results(results)
-        
-        # Store results in session state for export
+
         if results:
+            # Enhanced results display
+            render_enhanced_results(results)
+
+            # Store results in session state for export
             st.session_state.optimization_results = results
-    
+        else:
+            st.error("最適化に失敗しました / Optimization failed")
+
     elif not panels:
         # Show welcome message and instructions
         st.info("""
         ### 使用方法 / How to Use
-        
-        1. **パネル入力 / Panel Input**: 左側のサイドバーでパネル情報を入力
-           - 手動入力、テキストデータ、またはファイルアップロード
-           - Manual input, text data, or file upload
-        
-        2. **鋼板設定 / Steel Sheet Settings**: 母材の寸法と仕様を設定
-           - Configure dimensions and specifications
-        
-        3. **最適化設定 / Optimization Settings**: アルゴリズムと制約条件を選択
-           - Select algorithm and constraint conditions
-        
-        4. **実行 / Execute**: 最適化を実行して結果を確認
-           - Run optimization and view results
-        
-        ### サンプルデータ / Sample Data
-        
-        以下のサンプルデータを試してみてください:
+
+        1. **材料管理 / Material Management**: まず材料在庫を設定してください
+           - 材料管理ページでサンプルデータを読み込み
+           - Setup material inventory first
+
+        2. **パネル入力 / Panel Input**: パネル情報を入力
+           - サンプルデータまたは手動入力
+           - Sample data or manual input
+
+        3. **最適化実行 / Run Optimization**: 最適化を実行して結果を確認
+           - Execute optimization and view results
+
+        ### 実際のデータ対応 / Real Data Support
+
+        本システムは実際の製造データ形式に対応しています:
+        - data0923.txt (切断データ)
+        - sizaidata.txt (材料在庫データ)
         """)
-        
-        sample_data = """panel1,300,200,2,SS400,6.0
-panel2,400,300,1,SS400,6.0
-panel3,250,150,3,SS400,6.0"""
-        
-        st.code(sample_data, language="csv")
-        
-        if st.button("サンプルデータを読み込み / Load Sample Data"):
-            # Parse sample data and add to session
-            from core.text_parser import parse_text_data
-            result = parse_text_data(sample_data, 'csv')
-            if result.panels:
-                st.session_state.panels = result.panels
-                st.success(f"サンプルデータを読み込みました / Loaded sample data: {len(result.panels)} panels")
-                st.rerun()
-    
+
+        if st.button("📦 材料管理ページへ / Go to Material Management"):
+            st.session_state.page_redirect = 'material_management'
+            st.rerun()
+
     else:
         st.info("パネルを入力して最適化を実行してください / Please input panels and run optimization")
-    
-    # Footer
-    st.divider()
-    st.markdown("""
-    <div style='text-align: center; color: gray; font-size: 0.8em;'>
-    鋼板切断最適化システム v1.0 | Steel Cutting Optimization System v1.0<br>
-    Developed with Streamlit and Python | ギロチンカット制約対応
-    </div>
-    """, unsafe_allow_html=True)
+
+
+def render_material_management_page():
+    """Render material management page"""
+    from ui.material_management_ui import render_material_management
+    render_material_management()
+
+
+# Import os for file operations
+import os
 
 
 if __name__ == "__main__":

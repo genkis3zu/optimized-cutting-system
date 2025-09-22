@@ -75,9 +75,15 @@ class PanelInputComponent:
         elif input_method == 'sample_data':
             self._render_sample_data_input()
         
-        # Display current panels
-        self._render_panel_list()
-        
+        # Show panel count in sidebar (details moved to main page)
+        if st.session_state.panels:
+            total_panels = len(st.session_state.panels)
+            total_quantity = sum(p.quantity for p in st.session_state.panels)
+            st.info(f"📋 パネル: {total_panels}種類, {total_quantity}個")
+
+            if st.button("詳細をメインページで確認 / View Details on Main Page"):
+                st.session_state.show_panel_details = True
+
         return st.session_state.panels
     
     def _render_manual_input(self):

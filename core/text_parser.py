@@ -58,22 +58,48 @@ class RobustTextParser:
         self.unit_system = unit_system
         self.logger = logging.getLogger(__name__)
 
-        # Common Japanese material names mapping
+        # Material mapping based on actual inventory
         self.material_mapping = {
-            'ステンレス': 'SUS',
-            'ステンレス鋼': 'SUS304',
-            '炭素鋼': 'SS400',
-            '一般構造用鋼': 'SS400',
-            'アルミ': 'AL',
-            'アルミニウム': 'AL6061',
-            '鉄': 'SS400',
-            '鋼板': 'SS400',
-            # Additional mappings for sample data
-            'KW-300': 'KW-300',  # Color type, keep as-is
-            'KW-90': 'KW-90',    # Color type, keep as-is
-            'SE/E24': 'SECC',    # Material type mapping
-            'SE/E8': 'SECC',     # Material type mapping
-            'SECC': 'SECC'
+            # Japanese generic terms
+            'ステンレス': 'SECC',
+            'ステンレス鋼': 'SECC',
+            '炭素鋼': 'SECC',
+            '一般構造用鋼': 'SECC',
+            '鉄': 'SECC',
+            '鋼板': 'SECC',
+
+            # Actual inventory material codes
+            'SE/E24': 'SECC',    # Maps to SECC
+            'SE/E8': 'SECC',     # Maps to SECC
+            'S203': 'S-203',     # Normalize naming
+
+            # KW code bidirectional mapping
+            'KW90': 'KW-90',     # Normalize naming
+            'KW-90': 'KW-90',    # Keep consistent
+            'KW100': 'KW-100',   # Normalize to hyphen format
+            'KW-100': 'KW-100',  # Keep consistent
+            'KW300': 'KW-300',   # Normalize to hyphen format
+            'KW-300': 'KW-300',  # Keep consistent
+            'KW400': 'KW-400',   # Normalize to hyphen format
+            'KW-400': 'KW-400',  # Keep consistent
+
+            # Keep existing codes as-is
+            'SECC': 'SECC',
+            'SGCC': 'SGCC',      # For 0.4mm blank materials
+            'E-238P': 'E-238P',
+            'E-201P': 'E-201P',
+            'E-203P': 'E-203P',
+            'S-201': 'S-201',
+            'S-203': 'S-203',
+            'S-232': 'S-232',
+            'S-WHT': 'S-WHT',
+            'E-232D': 'E-232D',
+            'E-7017': 'E-7017',
+            'E-1259P': 'E-1259P',
+            'E-2054P': 'E-2054P',
+            'LG-011': 'LG-011',
+            'GS/E24': 'GS-E24',
+            'GS/E8': 'GS-E8'
         }
 
         # Common delimiters for auto-detection
@@ -469,9 +495,15 @@ class RobustTextParser:
                         else:
                             material_info[std_field] = value
 
-                # Normalize material type
-                if 'material_type' in material_info:
-                    material_info['material_type'] = self._normalize_material(material_info['material_type'])
+                # Handle blank material type with 0.4mm thickness -> SGCC
+                if 'material_type' in material_info and 'thickness' in material_info:
+                    mat_type = material_info['material_type']
+                    thickness = material_info['thickness']
+
+                    if (not mat_type or mat_type == '') and abs(thickness - 0.4) < 0.01:
+                        material_info['material_type'] = 'SGCC'
+                    elif mat_type:
+                        material_info['material_type'] = self._normalize_material(mat_type)
 
                 materials.append(material_info)
 
