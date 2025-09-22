@@ -15,11 +15,21 @@ import logging
 
 try:
     import jaconv
-    import mojimoji
+    try:
+        import mojimoji
+        MOJIMOJI_SUPPORT = True
+    except ImportError:
+        MOJIMOJI_SUPPORT = False
     JAPANESE_SUPPORT = True
 except ImportError:
     JAPANESE_SUPPORT = False
+    MOJIMOJI_SUPPORT = False
+
+# Log status after imports
+if not JAPANESE_SUPPORT:
     logging.warning("Japanese text processing libraries not available. Install jaconv and mojimoji for full support.")
+elif not MOJIMOJI_SUPPORT:
+    logging.info("jaconv installed. For full Japanese text support, install mojimoji as well.")
 
 
 @dataclass
@@ -73,15 +83,15 @@ class RobustTextParser:
             'SE/E8': 'SECC',     # Maps to SECC
             'S203': 'S-203',     # Normalize naming
 
-            # KW code bidirectional mapping
-            'KW90': 'KW-90',     # Normalize naming
-            'KW-90': 'KW-90',    # Keep consistent
-            'KW100': 'KW-100',   # Normalize to hyphen format
-            'KW-100': 'KW-100',  # Keep consistent
-            'KW300': 'KW-300',   # Normalize to hyphen format
-            'KW-300': 'KW-300',  # Keep consistent
-            'KW400': 'KW-400',   # Normalize to hyphen format
-            'KW-400': 'KW-400',  # Keep consistent
+            # KW code normalization (all to no-hyphen format)
+            'KW90': 'KW90',
+            'KW-90': 'KW90',     # Remove hyphen
+            'KW100': 'KW100',
+            'KW-100': 'KW100',   # Remove hyphen
+            'KW300': 'KW300',
+            'KW-300': 'KW300',   # Remove hyphen
+            'KW400': 'KW400',
+            'KW-400': 'KW400',   # Remove hyphen
 
             # Keep existing codes as-is
             'SECC': 'SECC',
@@ -137,7 +147,8 @@ class RobustTextParser:
             
         try:
             # Convert full-width numbers and symbols to half-width
-            text = mojimoji.zen_to_han(text, kana=False)
+            if MOJIMOJI_SUPPORT:
+                text = mojimoji.zen_to_han(text, kana=False)
             # Unicode normalization
             text = unicodedata.normalize('NFKC', text)
             # Convert Japanese decimal point
@@ -185,6 +196,9 @@ class RobustTextParser:
             if best_delimiter == ',':
                 return 'csv'
             elif best_delimiter == '\t':
+                # Check if it's manufacturing TSV format
+                if any('製造番号' in line and 'PI' in line for line in lines):
+                    return 'manufacturing_tsv'
                 return 'tsv'
             elif delimiter_scores[best_delimiter] > 1:
                 return f'delimited_{best_delimiter}'
@@ -216,6 +230,7 @@ class RobustTextParser:
             # Optional fields
             priority = int(float(fields[6])) if len(fields) > 6 and fields[6].strip() else 1
             allow_rotation = self._parse_boolean(fields[7]) if len(fields) > 7 else True
+            pi_code = fields[8].strip() if len(fields) > 8 and fields[8].strip() else ""
             
             # Unit conversion if needed
             if self.unit_system == 'inch':
@@ -231,7 +246,8 @@ class RobustTextParser:
                 material=material,
                 thickness=thickness,
                 priority=priority,
-                allow_rotation=allow_rotation
+                allow_rotation=allow_rotation,
+                pi_code=pi_code
             )
             
             return panel, None
@@ -283,7 +299,8 @@ class RobustTextParser:
                         material=self._normalize_material(item.get('material', 'SS400')),
                         thickness=float(item.get('thickness', 6.0)),
                         priority=int(item.get('priority', 1)),
-                        allow_rotation=bool(item.get('allow_rotation', True))
+                        allow_rotation=bool(item.get('allow_rotation', True)),
+                        pi_code=str(item.get('pi_code', ''))
                     )
                     panels.append(panel)
                 except (KeyError, ValueError, TypeError) as e:
@@ -342,8 +359,125 @@ class RobustTextParser:
                     line_num, line,
                     f"Fixed-width parse error: {str(e)}"
                 ))
-        
+
         return panels, errors
+
+    def parse_manufacturing_tsv(self, raw_data: str) -> Tuple[List[Panel], List[ParseError]]:
+        """
+        Parse manufacturing TSV format like data0923.txt
+        製造用TSV形式（data0923.txt等）をパース
+
+        Expected format columns:
+        製造番号 PI 部材名 W H 寸法3 数量 識別番号 品名 色 板厚 ...
+        """
+        panels = []
+        errors = []
+
+        lines = raw_data.strip().split('\n')
+        header_found = False
+
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Skip header lines
+            if not header_found:
+                if '製造番号' in line and 'PI' in line and 'W' in line and 'H' in line:
+                    header_found = True
+                continue
+
+            if not header_found:
+                continue
+
+            try:
+                # Split by tab
+                fields = line.split('\t')
+
+                if len(fields) < 11:  # Minimum required fields
+                    errors.append(ParseError(
+                        line_num, line,
+                        f"Insufficient fields: expected 11+, got {len(fields)}",
+                        "Format: 製造番号 PI 部材名 W H 寸法3 数量 識別番号 品名 色 板厚 ..."
+                    ))
+                    continue
+
+                # Extract fields according to the sample data format
+                manufacturing_no = fields[0].strip()
+                pi_code = fields[1].strip()
+                part_name = fields[2].strip()
+                width = self._parse_number(fields[3])  # W (完成寸法)
+                height = self._parse_number(fields[4])  # H (完成寸法)
+                # fields[5] is 寸法3 (usually 0)
+                quantity = int(float(fields[6]))  # 数量
+                # fields[7] is 識別番号
+                product_name = fields[8].strip()  # 品名
+                color = fields[9].strip()  # 色
+                thickness = self._parse_number(fields[10])  # 板厚
+
+                # Create panel ID from manufacturing number and part name
+                panel_id = f"{manufacturing_no}_{part_name}" if part_name else manufacturing_no
+
+                # Extract material from product name or use default
+                material = self._extract_material_from_name(product_name)
+                if not material:
+                    material = 'SECC'  # Default for steel panels
+
+                panel = Panel(
+                    id=panel_id,
+                    width=width,
+                    height=height,
+                    quantity=quantity,
+                    material=material,
+                    thickness=thickness,
+                    priority=1,
+                    allow_rotation=True,
+                    pi_code=pi_code
+                )
+
+                panels.append(panel)
+
+            except (ValueError, IndexError) as e:
+                errors.append(ParseError(
+                    line_num, line,
+                    f"Manufacturing TSV parse error: {str(e)}",
+                    "Check manufacturing data format"
+                ))
+            except Exception as e:
+                errors.append(ParseError(
+                    line_num, line,
+                    f"Unexpected error: {str(e)}"
+                ))
+
+        return panels, errors
+
+    def _extract_material_from_name(self, product_name: str) -> str:
+        """Extract material type from product name"""
+        if not product_name:
+            return ""
+
+        product_name = product_name.upper()
+
+        # Common material patterns in Japanese manufacturing
+        material_patterns = {
+            'SECC': ['SECC', 'ＳＥＣＣ', '鋼板', 'STEEL'],
+            'SGCC': ['SGCC', 'ＳＧＣＣ', 'ガルバ', 'GALVA'],
+            'SPCC': ['SPCC', 'ＳＰＣＣ'],
+            'SS400': ['SS400', 'ＳＳ４００'],
+            'SUS': ['SUS', 'ＳＵＳ', 'ステンレス', 'STAINLESS'],
+            'AL': ['AL', 'ＡＬ', 'アルミ', 'ALUMINUM']
+        }
+
+        for material, patterns in material_patterns.items():
+            for pattern in patterns:
+                if pattern in product_name:
+                    return material
+
+        # Default fallback for steel panels
+        if any(keyword in product_name for keyword in ['パネル', 'PANEL', 'LUX', 'SLUX']):
+            return 'SECC'
+
+        return ""
 
     def parse_cutting_data_tsv(self, raw_data: str) -> Tuple[List[Panel], List[ParseError]]:
         """
@@ -407,11 +541,19 @@ class RobustTextParser:
                 quantity = int(float(fields[field_map['quantity']]))
                 thickness = self._parse_number(fields[field_map['thickness']])
 
+                # Extract PI code if available
+                pi_code = ""
+                if 'pi_code' in field_map and len(fields) > field_map['pi_code']:
+                    pi_code = fields[field_map['pi_code']].strip()
+
                 # Extract material from color field if available
                 material = 'SS400'  # default
                 if 'color' in field_map and len(fields) > field_map['color']:
                     color_field = fields[field_map['color']].strip()
-                    material = self._normalize_material(color_field)
+                    if color_field:  # Only process non-empty color field
+                        normalized_material = self._normalize_material(color_field)
+                        if normalized_material:  # Only use if normalization returns non-empty result
+                            material = normalized_material
 
                 # Create panel ID from manufacturing number and optional part name
                 panel_id = manufacturing_no
@@ -428,7 +570,8 @@ class RobustTextParser:
                     material=material,
                     thickness=thickness,
                     priority=1,
-                    allow_rotation=True
+                    allow_rotation=True,
+                    pi_code=pi_code
                 )
                 panels.append(panel)
 
@@ -563,14 +706,30 @@ class RobustTextParser:
     def _normalize_material(self, material: str) -> str:
         """Normalize material names with Japanese mapping"""
         material = material.strip()
-        
+        original = material
+
+        # Return empty string if input is empty (let caller handle default)
+        if not material:
+            return ""
+
+        # First, normalize KW-XXX format to KWXXX (remove hyphen)
+        if material.startswith('KW-') and len(material) > 3:
+            # Convert KW-300 to KW300, KW-90 to KW90, etc.
+            normalized_kw = 'KW' + material[3:]
+            logging.debug(f"Material normalization: {original} → {normalized_kw} (KW hyphen removal)")
+            return normalized_kw
+
         # Check Japanese mapping
         for jp_name, std_name in self.material_mapping.items():
             if jp_name in material:
+                logging.debug(f"Material normalization: {original} → {std_name} (mapping)")
                 return std_name
-        
+
         # Return as-is if no mapping found
-        return material.upper()
+        result = material.upper()
+        if result != original:
+            logging.debug(f"Material normalization: {original} → {result} (uppercase)")
+        return result
     
     def validate_and_fix_panels(self, panels: List[Panel]) -> Tuple[List[Panel], List[str]]:
         """
@@ -626,6 +785,8 @@ class RobustTextParser:
         # Parse based on detected format
         if format_type == 'json':
             panels, errors = self.parse_json_data(raw_data)
+        elif format_type == 'manufacturing_tsv':
+            panels, errors = self.parse_manufacturing_tsv(raw_data)
         elif format_type == 'cutting_data_tsv':
             panels, errors = self.parse_cutting_data_tsv(raw_data)
         elif format_type == 'material_data_tsv':

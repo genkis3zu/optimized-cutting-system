@@ -105,15 +105,15 @@ class MaterialInventoryManager:
             'SE/E8': 'SECC',
             'S203': 'S-203',
 
-            # KW code bidirectional mapping for compatibility
-            'KW90': 'KW-90',     # Normalize to hyphen format
-            'KW-90': 'KW-90',    # Keep consistent
-            'KW100': 'KW-100',   # Normalize to hyphen format
-            'KW-100': 'KW-100',  # Keep consistent
-            'KW300': 'KW-300',   # Normalize to hyphen format
-            'KW-300': 'KW-300',  # Keep consistent
-            'KW400': 'KW-400',   # Normalize to hyphen format
-            'KW-400': 'KW-400',  # Keep consistent
+            # KW code normalization (all to no-hyphen format)
+            'KW90': 'KW90',
+            'KW-90': 'KW90',     # Remove hyphen
+            'KW100': 'KW100',
+            'KW-100': 'KW100',   # Remove hyphen
+            'KW300': 'KW300',
+            'KW-300': 'KW300',   # Remove hyphen
+            'KW400': 'KW400',
+            'KW-400': 'KW400',   # Remove hyphen
 
             # Keep existing codes as-is
             'SECC': 'SECC',
@@ -264,6 +264,10 @@ class MaterialInventoryManager:
         # Normalize material code before validation
         normalized_material = self.normalize_material_code(material_type)
 
+        # Debug logging
+        self.logger.debug(f"Validating material: {material_type} → normalized: {normalized_material}")
+        self.logger.debug(f"Available material types: {sorted(self.material_types)}")
+
         # Check if material type exists
         if normalized_material not in self.material_types:
             available_types = ", ".join(sorted(self.material_types))
@@ -313,7 +317,33 @@ class MaterialInventoryManager:
 
     def normalize_material_code(self, input_code: str) -> str:
         """Normalize material code using mapping"""
-        return self.material_mapping.get(input_code, input_code)
+        # First, handle KW codes specifically - normalize to no-hyphen format
+        if input_code.startswith('KW-') and len(input_code) > 3:
+            # Convert KW-300 to KW300
+            normalized = 'KW' + input_code[3:]
+            # Check if this normalized form exists in inventory
+            if normalized in self.material_types:
+                return normalized
+            # If not in inventory, return the normalized form anyway
+            return normalized
+
+        # Try direct mapping
+        if input_code in self.material_mapping:
+            mapped = self.material_mapping[input_code]
+            # If the mapped value exists in inventory, use it
+            if mapped in self.material_types:
+                return mapped
+            # Otherwise, check if the mapped value needs further normalization
+            if mapped.startswith('KW-'):
+                return 'KW' + mapped[3:]
+            return mapped
+
+        # If not found, check if it's already in inventory
+        if input_code in self.material_types:
+            return input_code
+
+        # Default: return as-is
+        return input_code
 
     def add_material_mapping(self, from_code: str, to_code: str):
         """Add a new material mapping"""

@@ -17,14 +17,19 @@ class Panel:
     パネルデータ構造（検証付き）
     """
     id: str
-    width: float  # mm (50-1500)
-    height: float  # mm (50-3100)
+    width: float  # mm (50-1500) - 完成寸法 / Finished dimension
+    height: float  # mm (50-3100) - 完成寸法 / Finished dimension
     quantity: int
     material: str  # Material block key
     thickness: float  # mm
     priority: int = 1  # 1-10
     allow_rotation: bool = True
     block_order: int = 0  # Order within material block
+    pi_code: str = ""  # PIコード for dimension expansion / PI code for dimension expansion
+
+    # 展開寸法 (PIコードによる計算結果) / Expanded dimensions (calculated by PI code)
+    expanded_width: Optional[float] = None
+    expanded_height: Optional[float] = None
     
     def __post_init__(self):
         """Validate panel dimensions after initialization"""
@@ -47,8 +52,25 @@ class Panel:
     
     @property
     def area(self) -> float:
-        """Calculate panel area in mm²"""
+        """Calculate panel area in mm² (using finished dimensions)"""
         return self.width * self.height
+
+    @property
+    def cutting_area(self) -> float:
+        """Calculate cutting area in mm² (using expanded dimensions if available)"""
+        if self.expanded_width is not None and self.expanded_height is not None:
+            return self.expanded_width * self.expanded_height
+        return self.area
+
+    @property
+    def cutting_width(self) -> float:
+        """Get cutting width (expanded or original)"""
+        return self.expanded_width if self.expanded_width is not None else self.width
+
+    @property
+    def cutting_height(self) -> float:
+        """Get cutting height (expanded or original)"""
+        return self.expanded_height if self.expanded_height is not None else self.height
     
     @property
     def rotated(self) -> 'Panel':
@@ -64,16 +86,66 @@ class Panel:
             thickness=self.thickness,
             priority=self.priority,
             allow_rotation=self.allow_rotation,
-            block_order=self.block_order
+            block_order=self.block_order,
+            pi_code=self.pi_code,
+            expanded_width=self.expanded_height,  # Swap expanded dimensions too
+            expanded_height=self.expanded_width
         )
     
     def fits_in_sheet(self, sheet_width: float, sheet_height: float) -> bool:
-        """Check if panel fits in given sheet dimensions"""
-        fits_normal = self.width <= sheet_width and self.height <= sheet_height
+        """Check if panel fits in given sheet dimensions (using cutting dimensions)"""
+        cutting_w = self.cutting_width
+        cutting_h = self.cutting_height
+
+        fits_normal = cutting_w <= sheet_width and cutting_h <= sheet_height
         if self.allow_rotation:
-            fits_rotated = self.height <= sheet_width and self.width <= sheet_height
+            fits_rotated = cutting_h <= sheet_width and cutting_w <= sheet_height
             return fits_normal or fits_rotated
         return fits_normal
+
+    def calculate_expanded_dimensions(self, pi_manager):
+        """
+        Calculate expanded dimensions using PI code
+        PIコードを使用して展開寸法を計算
+
+        Args:
+            pi_manager: PIManager instance
+        """
+        if self.pi_code and pi_manager:
+            expanded_w, expanded_h = pi_manager.get_expansion_for_panel(
+                self.pi_code, self.width, self.height
+            )
+            self.expanded_width = expanded_w
+            self.expanded_height = expanded_h
+        else:
+            # PIコードがない場合は元寸法を使用
+            self.expanded_width = self.width
+            self.expanded_height = self.height
+
+    def has_expansion(self) -> bool:
+        """Check if panel has dimension expansion"""
+        return (self.expanded_width is not None and
+                self.expanded_height is not None and
+                (self.expanded_width != self.width or self.expanded_height != self.height))
+
+    def get_expansion_info(self) -> Dict[str, float]:
+        """Get expansion information"""
+        if not self.has_expansion():
+            return {
+                'w_expansion': 0.0,
+                'h_expansion': 0.0,
+                'area_expansion': 0.0
+            }
+
+        w_exp = self.expanded_width - self.width
+        h_exp = self.expanded_height - self.height
+        area_exp = self.cutting_area - self.area
+
+        return {
+            'w_expansion': w_exp,
+            'h_expansion': h_exp,
+            'area_expansion': area_exp
+        }
 
 
 @dataclass
