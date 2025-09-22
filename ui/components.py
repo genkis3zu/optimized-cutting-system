@@ -40,7 +40,11 @@ class PanelInputComponent:
             'add_panel': 'パネル追加 / Add Panel',
             'clear_all': 'すべてクリア / Clear All',
             'parse_text': 'テキスト解析 / Parse Text',
-            'sample_formats': 'サンプル形式 / Sample Formats'
+            'sample_formats': 'サンプル形式 / Sample Formats',
+            'sample_data': 'サンプルデータ / Sample Data',
+            'load_cutting_data': '切断データ読み込み / Load Cutting Data',
+            'load_material_data': '母材データ読み込み / Load Material Data',
+            'load_both_data': '両方読み込み / Load Both Data'
         }
     
     def render(self) -> List[Panel]:
@@ -57,8 +61,8 @@ class PanelInputComponent:
         # Input method selection
         input_method = st.radio(
             self.ui_text['input_method'],
-            ['manual_input', 'text_input', 'file_upload'],
-            format_func=lambda x: self.ui_text[x],
+            ['manual_input', 'text_input', 'file_upload', 'sample_data'],
+            format_func=lambda x: self.ui_text.get(x, x.replace('_', ' ').title()),
             horizontal=True
         )
         
@@ -68,6 +72,8 @@ class PanelInputComponent:
             self._render_text_input()
         elif input_method == 'file_upload':
             self._render_file_upload()
+        elif input_method == 'sample_data':
+            self._render_sample_data_input()
         
         # Display current panels
         self._render_panel_list()
@@ -255,7 +261,198 @@ panel2	400	300	1	SUS304	3.0	3	false""")
                     
             except Exception as e:
                 st.error(f"ファイル読み込みエラー / File read error: {str(e)}")
-    
+
+    def _render_sample_data_input(self):
+        """Render sample data loading component"""
+        st.write("### サンプルデータ読み込み / Sample Data Loading")
+
+        st.info("""
+        **使用可能なサンプルデータ / Available Sample Data:**
+        - `data0923.txt`: 切断用パネルデータ / Panel cutting data
+        - `sizaidata.txt`: 母材在庫データ / Material inventory data
+
+        これらのファイルは実際の製造データ形式に基づいています。
+        These files are based on actual manufacturing data format.
+        """)
+
+        import os
+        cutting_file = "sample_data/data0923.txt"
+        material_file = "sample_data/sizaidata.txt"
+
+        # Check file availability
+        cutting_exists = os.path.exists(cutting_file)
+        material_exists = os.path.exists(material_file)
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.write("**切断データ / Cutting Data:**")
+            if cutting_exists:
+                st.success("✅ data0923.txt 利用可能")
+                if st.button(self.ui_text['load_cutting_data']):
+                    self._load_sample_cutting_data(cutting_file)
+            else:
+                st.error("❌ data0923.txt 見つかりません")
+
+        with col2:
+            st.write("**母材データ / Material Data:**")
+            if material_exists:
+                st.success("✅ sizaidata.txt 利用可能")
+                if st.button(self.ui_text['load_material_data']):
+                    self._load_sample_material_data(material_file)
+            else:
+                st.error("❌ sizaidata.txt 見つかりません")
+
+        with col3:
+            st.write("**統合読み込み / Combined Load:**")
+            if cutting_exists and material_exists:
+                st.success("✅ 両方利用可能")
+                if st.button(self.ui_text['load_both_data'], type="primary"):
+                    self._load_both_sample_data(cutting_file, material_file)
+            else:
+                st.error("❌ ファイル不足")
+
+        # Display sample data preview
+        if cutting_exists or material_exists:
+            with st.expander("📋 サンプルデータプレビュー / Sample Data Preview"):
+                if cutting_exists:
+                    try:
+                        with open(cutting_file, 'r', encoding='utf-8') as f:
+                            cutting_preview = f.read()[:500]
+                        st.write("**切断データ (data0923.txt):**")
+                        st.text(cutting_preview + "..." if len(cutting_preview) >= 500 else cutting_preview)
+                    except Exception as e:
+                        st.error(f"切断データ読み込みエラー: {str(e)}")
+
+                if material_exists:
+                    try:
+                        with open(material_file, 'r', encoding='utf-8') as f:
+                            material_preview = f.read()[:500]
+                        st.write("**母材データ (sizaidata.txt):**")
+                        st.text(material_preview + "..." if len(material_preview) >= 500 else material_preview)
+                    except Exception as e:
+                        st.error(f"母材データ読み込みエラー: {str(e)}")
+
+    def _load_sample_cutting_data(self, cutting_file: str):
+        """Load cutting data from sample file"""
+        try:
+            from core.text_parser import parse_cutting_data_file
+            result = parse_cutting_data_file(cutting_file)
+
+            if result.is_successful:
+                st.session_state.panels.extend(result.panels)
+                st.success(f"✅ 切断データから{len(result.panels)}個のパネルを読み込みました")
+                st.info(f"成功率: {result.success_rate:.1%}")
+
+                if result.warnings:
+                    with st.expander("⚠️ 警告"):
+                        for warning in result.warnings:
+                            st.warning(warning)
+
+                if result.errors:
+                    with st.expander("❌ エラー"):
+                        for error in result.errors:
+                            st.error(f"Line {error.line_number}: {error.error_message}")
+
+                st.rerun()
+            else:
+                st.error("切断データの読み込みに失敗しました")
+
+        except Exception as e:
+            st.error(f"切断データ読み込みエラー: {str(e)}")
+
+    def _load_sample_material_data(self, material_file: str):
+        """Load material data from sample file (for information only)"""
+        try:
+            from core.text_parser import parse_material_data_file
+            materials, errors = parse_material_data_file(material_file)
+
+            if materials:
+                st.success(f"✅ 母材データから{len(materials)}個の材料情報を読み込みました")
+
+                # Show material inventory summary
+                with st.expander("📊 母材在庫サマリー / Material Inventory Summary"):
+                    import pandas as pd
+                    df = pd.DataFrame(materials)
+                    st.dataframe(df.head(10))
+
+                    # Material type summary
+                    if 'material_type' in df.columns:
+                        material_summary = df.groupby('material_type').agg({
+                            'width': 'mean',
+                            'height': 'mean',
+                            'thickness': 'mean',
+                            'area': 'sum'
+                        }).round(2)
+                        st.write("**材質別サマリー:**")
+                        st.dataframe(material_summary)
+
+                # Store material data in session state for reference
+                st.session_state.material_inventory = materials
+
+                if errors:
+                    with st.expander("❌ エラー"):
+                        for error in errors:
+                            st.error(f"Line {error.line_number}: {error.error_message}")
+            else:
+                st.error("母材データの読み込みに失敗しました")
+
+        except Exception as e:
+            st.error(f"母材データ読み込みエラー: {str(e)}")
+
+    def _load_both_sample_data(self, cutting_file: str, material_file: str):
+        """Load both cutting and material data"""
+        try:
+            from core.text_parser import parse_sample_data_files
+            cutting_result, materials, all_errors = parse_sample_data_files(cutting_file, material_file)
+
+            if cutting_result.is_successful and materials:
+                # Add cutting panels
+                st.session_state.panels.extend(cutting_result.panels)
+                # Store material inventory
+                st.session_state.material_inventory = materials
+
+                st.success(f"""
+                ✅ データ読み込み完了！
+                - パネル: {len(cutting_result.panels)}個
+                - 母材: {len(materials)}種類
+                - 成功率: {cutting_result.success_rate:.1%}
+                """)
+
+                # Show combined summary
+                with st.expander("📊 読み込みサマリー / Loading Summary"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.write("**パネルデータ:**")
+                        panel_materials = set(p.material for p in cutting_result.panels)
+                        total_area = sum(p.area * p.quantity for p in cutting_result.panels)
+                        st.write(f"- 総パネル数: {len(cutting_result.panels)}")
+                        st.write(f"- 材質種類: {len(panel_materials)}")
+                        st.write(f"- 総面積: {total_area:,.0f} mm²")
+
+                    with col2:
+                        st.write("**母材データ:**")
+                        import pandas as pd
+                        df = pd.DataFrame(materials)
+                        if 'material_type' in df.columns:
+                            material_types = df['material_type'].nunique()
+                            total_stock_area = df['area'].sum() if 'area' in df.columns else 0
+                            st.write(f"- 母材種類: {material_types}")
+                            st.write(f"- 在庫総面積: {total_stock_area:,.0f} mm²")
+
+                if all_errors:
+                    with st.expander("❌ エラー"):
+                        for error in all_errors:
+                            st.error(f"Line {error.line_number}: {error.error_message}")
+
+                st.rerun()
+            else:
+                st.error("データの読み込みに失敗しました")
+
+        except Exception as e:
+            st.error(f"データ読み込みエラー: {str(e)}")
+
     def _parse_and_add_panels(self, text_data: str, format_hint: Optional[str] = None):
         """Parse text data and add panels to session state"""
         try:

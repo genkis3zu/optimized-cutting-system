@@ -57,7 +57,7 @@ class RobustTextParser:
         self.encoding = encoding
         self.unit_system = unit_system
         self.logger = logging.getLogger(__name__)
-        
+
         # Common Japanese material names mapping
         self.material_mapping = {
             'ステンレス': 'SUS',
@@ -67,11 +67,39 @@ class RobustTextParser:
             'アルミ': 'AL',
             'アルミニウム': 'AL6061',
             '鉄': 'SS400',
-            '鋼板': 'SS400'
+            '鋼板': 'SS400',
+            # Additional mappings for sample data
+            'KW-300': 'KW-300',  # Color type, keep as-is
+            'KW-90': 'KW-90',    # Color type, keep as-is
+            'SE/E24': 'SECC',    # Material type mapping
+            'SE/E8': 'SECC',     # Material type mapping
+            'SECC': 'SECC'
         }
-        
+
         # Common delimiters for auto-detection
         self.delimiters = [',', '\t', ';', '|', ' ']
+
+        # Sample data format mappings
+        self.cutting_data_headers = {
+            '製造番号': 'manufacturing_no',
+            'PI': 'pi_code',
+            '部材名': 'part_name',
+            'W': 'width',
+            'H': 'height',
+            '数量': 'quantity',
+            '色': 'color',
+            '板厚': 'thickness',
+            '識別番号': 'id_number'
+        }
+
+        self.material_data_headers = {
+            '資材コー': 'material_code',
+            '材質': 'material_type',
+            'T': 'thickness',
+            'W': 'width',
+            'H': 'height',
+            '面積': 'area'
+        }
         
     def normalize_japanese_text(self, text: str) -> str:
         """
@@ -290,7 +318,184 @@ class RobustTextParser:
                 ))
         
         return panels, errors
-    
+
+    def parse_cutting_data_tsv(self, raw_data: str) -> Tuple[List[Panel], List[ParseError]]:
+        """
+        Parse data0923.txt format - Japanese cutting data
+        """
+        panels = []
+        errors = []
+        lines = raw_data.strip().split('\n')
+
+        # Find header line (contains 製造番号)
+        header_line_idx = -1
+        for i, line in enumerate(lines):
+            if '製造番号' in line and 'W' in line and 'H' in line:
+                header_line_idx = i
+                break
+
+        if header_line_idx == -1:
+            errors.append(ParseError(
+                0, raw_data[:100],
+                "Could not find header line with required fields (製造番号, W, H)"
+            ))
+            return panels, errors
+
+        # Parse header to get field positions
+        header_fields = lines[header_line_idx].split('\t')
+        field_map = {}
+        for i, field in enumerate(header_fields):
+            field = field.strip()
+            if field in self.cutting_data_headers:
+                field_map[self.cutting_data_headers[field]] = i
+
+        # Verify required fields
+        required_fields = ['manufacturing_no', 'width', 'height', 'quantity', 'thickness']
+        missing_fields = [f for f in required_fields if f not in field_map]
+        if missing_fields:
+            errors.append(ParseError(
+                header_line_idx + 1, lines[header_line_idx],
+                f"Missing required fields: {missing_fields}"
+            ))
+            return panels, errors
+
+        # Parse data lines
+        for line_num, line in enumerate(lines[header_line_idx + 1:], header_line_idx + 2):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                fields = line.split('\t')
+                if len(fields) < max(field_map.values()) + 1:
+                    errors.append(ParseError(
+                        line_num, line,
+                        f"Insufficient fields: expected at least {max(field_map.values()) + 1}, got {len(fields)}"
+                    ))
+                    continue
+
+                # Extract values using field mapping
+                manufacturing_no = fields[field_map['manufacturing_no']].strip()
+                width = self._parse_number(fields[field_map['width']])
+                height = self._parse_number(fields[field_map['height']])
+                quantity = int(float(fields[field_map['quantity']]))
+                thickness = self._parse_number(fields[field_map['thickness']])
+
+                # Extract material from color field if available
+                material = 'SS400'  # default
+                if 'color' in field_map and len(fields) > field_map['color']:
+                    color_field = fields[field_map['color']].strip()
+                    material = self._normalize_material(color_field)
+
+                # Create panel ID from manufacturing number and optional part name
+                panel_id = manufacturing_no
+                if 'part_name' in field_map and len(fields) > field_map['part_name']:
+                    part_name = fields[field_map['part_name']].strip()
+                    if part_name:
+                        panel_id = f"{manufacturing_no}_{part_name}"
+
+                panel = Panel(
+                    id=panel_id,
+                    width=width,
+                    height=height,
+                    quantity=quantity,
+                    material=material,
+                    thickness=thickness,
+                    priority=1,
+                    allow_rotation=True
+                )
+                panels.append(panel)
+
+            except (ValueError, IndexError) as e:
+                errors.append(ParseError(
+                    line_num, line,
+                    f"Cutting data parse error: {str(e)}"
+                ))
+
+        return panels, errors
+
+    def parse_material_data_tsv(self, raw_data: str) -> Tuple[List[Dict], List[ParseError]]:
+        """
+        Parse sizaidata.txt format - Material inventory data
+        Returns list of material stock info rather than panels
+        """
+        materials = []
+        errors = []
+        lines = raw_data.strip().split('\n')
+
+        # Find header line (contains 資材コー)
+        header_line_idx = -1
+        for i, line in enumerate(lines):
+            if '資材コー' in line and '材質' in line:
+                header_line_idx = i
+                break
+
+        if header_line_idx == -1:
+            errors.append(ParseError(
+                0, raw_data[:100],
+                "Could not find header line with required fields (資材コー, 材質)"
+            ))
+            return materials, errors
+
+        # Parse header to get field positions
+        header_fields = lines[header_line_idx].split('\t')
+        field_map = {}
+        for i, field in enumerate(header_fields):
+            field = field.strip()
+            if field in self.material_data_headers:
+                field_map[self.material_data_headers[field]] = i
+
+        # Parse data lines
+        for line_num, line in enumerate(lines[header_line_idx + 1:], header_line_idx + 2):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                fields = line.split('\t')
+                if len(fields) < max(field_map.values()) + 1:
+                    errors.append(ParseError(
+                        line_num, line,
+                        f"Insufficient fields: expected at least {max(field_map.values()) + 1}, got {len(fields)}"
+                    ))
+                    continue
+
+                material_info = {}
+                for std_field, field_idx in field_map.items():
+                    if field_idx < len(fields):
+                        value = fields[field_idx].strip()
+                        if std_field in ['thickness', 'width', 'height', 'area']:
+                            material_info[std_field] = self._parse_number(value) if value else 0.0
+                        else:
+                            material_info[std_field] = value
+
+                # Normalize material type
+                if 'material_type' in material_info:
+                    material_info['material_type'] = self._normalize_material(material_info['material_type'])
+
+                materials.append(material_info)
+
+            except (ValueError, IndexError) as e:
+                errors.append(ParseError(
+                    line_num, line,
+                    f"Material data parse error: {str(e)}"
+                ))
+
+        return materials, errors
+
+    def detect_sample_data_format(self, raw_data: str) -> str:
+        """
+        Detect if this is sample data format (cutting data or material data)
+        """
+        sample = raw_data[:1000]
+
+        if '製造番号' in sample and 'PI' in sample and '部材名' in sample:
+            return 'cutting_data_tsv'
+        elif '資材コー' in sample and '材質' in sample:
+            return 'material_data_tsv'
+
+        return 'unknown'
+
     def _parse_number(self, value: str) -> float:
         """Parse number with Japanese decimal handling"""
         if not value:
@@ -376,15 +581,25 @@ class RobustTextParser:
         raw_data = self.normalize_japanese_text(raw_data)
         
         # Detect format
-        format_type = format_hint or self.detect_format(raw_data)
-        
+        sample_format = self.detect_sample_data_format(raw_data)
+        if sample_format != 'unknown':
+            format_type = sample_format
+        else:
+            format_type = format_hint or self.detect_format(raw_data)
+
         panels = []
         errors = []
         warnings = []
-        
+
         # Parse based on detected format
         if format_type == 'json':
             panels, errors = self.parse_json_data(raw_data)
+        elif format_type == 'cutting_data_tsv':
+            panels, errors = self.parse_cutting_data_tsv(raw_data)
+        elif format_type == 'material_data_tsv':
+            # Material data doesn't create panels directly, but we can report the materials found
+            materials, errors = self.parse_material_data_tsv(raw_data)
+            warnings.append(f"Material data format detected: {len(materials)} materials found. Use parse_material_data() method for material inventory.")
         else:
             # Line-based parsing for CSV/TSV/fixed-width
             lines = raw_data.strip().split('\n')
@@ -447,3 +662,31 @@ def parse_text_data(text: str, format_hint: Optional[str] = None) -> ParseResult
     """Quick parse function for text data"""
     parser = RobustTextParser()
     return parser.parse_to_panels(text, format_hint)
+
+
+def parse_cutting_data_file(file_path: str) -> ParseResult:
+    """Parse Japanese cutting data file (data0923.txt format)"""
+    parser = RobustTextParser()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return parser.parse_to_panels(f.read(), 'cutting_data_tsv')
+
+
+def parse_material_data_file(file_path: str) -> Tuple[List[Dict], List[ParseError]]:
+    """Parse Japanese material data file (sizaidata.txt format)"""
+    parser = RobustTextParser()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return parser.parse_material_data_tsv(f.read())
+
+
+def parse_sample_data_files(cutting_file: str, material_file: str) -> Tuple[ParseResult, List[Dict], List[ParseError]]:
+    """
+    Parse both sample data files together
+    Returns: (cutting_panels_result, material_inventory, combined_errors)
+    """
+    cutting_result = parse_cutting_data_file(cutting_file)
+    materials, material_errors = parse_material_data_file(material_file)
+
+    # Combine errors
+    all_errors = cutting_result.errors + material_errors
+
+    return cutting_result, materials, all_errors
