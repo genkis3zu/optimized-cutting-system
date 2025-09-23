@@ -117,8 +117,9 @@ class GuillotineBinPacker:
                         best_area_fit = area_fit
 
         if best_rect:
-            width = panel.height if best_rotated else panel.width
-            height = panel.width if best_rotated else panel.height
+            # Use cutting dimensions consistently
+            width = panel.cutting_height if best_rotated else panel.cutting_width
+            height = panel.cutting_width if best_rotated else panel.cutting_height
             return best_rect, best_rotated, best_x, best_y
 
         return None
@@ -315,12 +316,15 @@ class FirstFitDecreasing(OptimizationAlgorithm):
                     thickness=panel.thickness,
                     priority=panel.priority,
                     allow_rotation=panel.allow_rotation,
-                    block_order=panel.block_order
+                    block_order=panel.block_order,
+                    pi_code=panel.pi_code,
+                    expanded_width=panel.expanded_width,
+                    expanded_height=panel.expanded_height
                 )
                 individual_panels.append(individual_panel)
         
-        # Sort by area (decreasing) - core of FFD algorithm
-        individual_panels.sort(key=lambda p: p.area, reverse=True)
+        # Sort by cutting area (decreasing) - core of FFD algorithm
+        individual_panels.sort(key=lambda p: p.cutting_area, reverse=True)
         
         self.logger.debug(f"Sorted {len(individual_panels)} individual panels by area")
         
@@ -333,11 +337,21 @@ class FirstFitDecreasing(OptimizationAlgorithm):
         
         # Place panels using First Fit strategy
         placed_count = 0
+        unplaced_panels = []
         for panel in individual_panels:
             if packer.place_panel(panel):
                 placed_count += 1
+                self.logger.debug(f"Placed panel {panel.id} ({panel.cutting_width:.1f}x{panel.cutting_height:.1f}mm)")
             else:
-                self.logger.debug(f"Could not place panel {panel.id}")
+                unplaced_panels.append(panel)
+                self.logger.debug(f"Could not place panel {panel.id} ({panel.cutting_width:.1f}x{panel.cutting_height:.1f}mm)")
+
+        if unplaced_panels:
+            self.logger.warning(f"Failed to place {len(unplaced_panels)} panels:")
+            for panel in unplaced_panels[:10]:  # Log first 10
+                self.logger.warning(f"  Unplaced: {panel.id} ({panel.cutting_width:.1f}x{panel.cutting_height:.1f}mm)")
+            remaining_space = sum(rect.area for rect in packer.free_rectangles)
+            self.logger.warning(f"Remaining free space: {remaining_space:.0f} mm²")
         
         # Calculate results
         efficiency = packer.get_efficiency()

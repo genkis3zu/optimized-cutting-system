@@ -19,6 +19,7 @@ from core.models import (
 )
 from core.material_manager import get_material_manager
 from core.pi_manager import get_pi_manager
+from core.models.optimization_state import GlobalOptimizationState
 
 
 @dataclass
@@ -363,6 +364,50 @@ class OptimizationEngine:
         self,
         panels: List[Panel],
         constraints: Optional[OptimizationConstraints] = None,
+        algorithm_hint: Optional[str] = None,
+        use_global_optimizer: bool = False
+    ) -> List[PlacementResult]:
+        """
+        Main optimization method with optional global optimizer
+        """
+        if use_global_optimizer:
+            return self.optimize_with_guarantee(panels, constraints)
+        return self._optimize_standard(panels, constraints, algorithm_hint)
+
+    def optimize_with_guarantee(
+        self,
+        panels: List[Panel],
+        constraints: Optional[OptimizationConstraints] = None
+    ) -> List[PlacementResult]:
+        """
+        Optimization with 100% placement guarantee using global optimizer
+        グローバル最適化エンジンを使用した100%配置保証付き最適化
+        """
+        try:
+            from core.algorithms.global_optimizer import create_global_optimization_engine
+
+            global_engine = create_global_optimization_engine(self)
+            results, state = global_engine.optimize_with_guarantee(panels, constraints)
+
+            # Log guarantee status
+            if state.placement_rate >= 1.0:
+                self.logger.info(f"✓ 100% PLACEMENT GUARANTEED: {state.panels_placed} panels on {state.sheets_used} sheets")
+            else:
+                self.logger.error(f"✗ GUARANTEE FAILED: {state.placement_rate:.1%} placement rate achieved")
+
+            return results
+
+        except ImportError:
+            self.logger.warning("Global optimizer not available, falling back to standard optimization")
+            return self._optimize_standard(panels, constraints)
+        except Exception as e:
+            self.logger.error(f"Global optimizer failed: {e}, falling back to standard optimization")
+            return self._optimize_standard(panels, constraints)
+
+    def _optimize_standard(
+        self,
+        panels: List[Panel],
+        constraints: Optional[OptimizationConstraints] = None,
         algorithm_hint: Optional[str] = None
     ) -> List[PlacementResult]:
         """
@@ -464,10 +509,15 @@ class OptimizationEngine:
                             algorithm, material_panels, sheet, material_constraints
                         )
 
-                        if result and result.efficiency > best_efficiency:
-                            best_result = result
-                            best_efficiency = result.efficiency
-                            self.logger.info(f"Better solution found with {sheet.width}×{sheet.height}mm: {result.efficiency:.1%} efficiency")
+                        # Prioritize panels placed, then efficiency
+                        if result and len(result.panels) > 0:
+                            placed_count = len(result.panels)
+                            if (best_result is None or
+                                placed_count > len(best_result.panels) or
+                                (placed_count == len(best_result.panels) and result.efficiency > best_efficiency)):
+                                best_result = result
+                                best_efficiency = result.efficiency
+                                self.logger.info(f"Better solution found with {sheet.width}×{sheet.height}mm: {placed_count} panels, {result.efficiency:.1%} efficiency")
 
                     # Use the best result found for this material
                     if best_result:
@@ -493,92 +543,119 @@ class OptimizationEngine:
 
                 return results
             else:
-                # Multi-sheet optimization without material separation
-                # Use the best available material/sheet combination for all panels
+                # Multi-sheet optimization by material type
+                # Process each material separately with multiple sheets
                 if available_materials:
-                    # Choose the material with the most available sheet options
-                    best_material = max(available_materials.keys(),
-                                      key=lambda k: len(available_materials[k]))
-                    available_sheets = available_materials[best_material]
-
-                    # Choose the largest available sheet for maximum capacity
-                    best_sheet = max(available_sheets, key=lambda s: s.area)
-
-                    self.logger.info(
-                        f"Multi-sheet optimization: Using {best_material} sheets ({best_sheet.width}×{best_sheet.height}mm) "
-                        f"for {len(panels)} panel types, total quantity: {sum(p.quantity for p in panels)}"
-                    )
-
                     results = []
-                    remaining_panels = panels.copy()
-                    sheet_count = 0
-                    max_sheets = constraints.max_sheets
 
-                    while remaining_panels and sheet_count < max_sheets:
-                        sheet_count += 1
+                    # Group panels by material
+                    material_groups = self._group_panels_by_material(panels)
 
-                        # Optimize current sheet
-                        sheet_constraints = OptimizationConstraints(
-                            max_sheets=1,
-                            kerf_width=constraints.kerf_width,
-                            min_waste_piece=constraints.min_waste_piece,
-                            allow_rotation=constraints.allow_rotation,
-                            material_separation=False,
-                            time_budget=constraints.time_budget / max_sheets,  # Distribute time budget
-                            target_efficiency=constraints.target_efficiency
-                        )
+                    for material, material_panels in material_groups.items():
+                        material_manager = get_material_manager()
+                        normalized_material = material_manager.normalize_material_code(material)
 
-                        result = self._optimize_with_timeout(
-                            algorithm, remaining_panels, best_sheet, sheet_constraints
-                        )
+                        self.logger.info(f"Multi-sheet optimization for {normalized_material}: {len(material_panels)} panel types, total quantity: {sum(p.quantity for p in material_panels)}")
 
-                        if result and len(result.panels) > 0:
-                            result.sheet_id = sheet_count
-                            result.material_block = best_material
-                            results.append(result)
+                        # Get available sheets for this material
+                        if normalized_material not in available_materials:
+                            self.logger.warning(f"No inventory found for material {normalized_material}, skipping {len(material_panels)} panels")
+                            continue
 
-                            # Remove placed panels from remaining list
-                            # Fix: Handle individual panel IDs correctly (e.g., "562210_1", "562210_2")
-                            new_remaining = []
-                            for panel in remaining_panels:
-                                # Count how many individual panels with base ID were placed
-                                base_id = panel.id
-                                placed_count = sum(1 for p in result.panels
-                                                 if p.panel.id == base_id or p.panel.id.startswith(f"{base_id}_"))
+                        available_sheets = available_materials[normalized_material]
 
-                                if placed_count < panel.quantity:
-                                    # Create panel with reduced quantity
-                                    remaining_panel = Panel(
-                                        id=panel.id,
-                                        width=panel.width,
-                                        height=panel.height,
-                                        quantity=panel.quantity - placed_count,
-                                        material=panel.material,
-                                        thickness=panel.thickness,
-                                        priority=panel.priority,
-                                        allow_rotation=panel.allow_rotation,
-                                        block_order=panel.block_order,
-                                        pi_code=panel.pi_code,
-                                        expanded_width=panel.expanded_width,
-                                        expanded_height=panel.expanded_height
-                                    )
-                                    new_remaining.append(remaining_panel)
+                        self.logger.info(f"Multi-sheet optimization with {len(available_sheets)} sheet size options for {normalized_material}")
 
-                                    self.logger.debug(
-                                        f"Panel {base_id}: {placed_count}/{panel.quantity} placed, "
-                                        f"{remaining_panel.quantity} remaining"
-                                    )
-                                else:
-                                    self.logger.debug(f"Panel {base_id}: All {panel.quantity} panels placed")
-                            remaining_panels = new_remaining
+                        # Multi-sheet optimization for this material
+                        remaining_panels = material_panels.copy()
+                        sheet_count = 0
+                        max_sheets = constraints.max_sheets
 
-                            self.logger.info(
-                                f"Sheet {sheet_count}: {len(result.panels)} panels placed, "
-                                f"efficiency {result.efficiency:.1%}, {len(remaining_panels)} panel types remaining"
-                            )
-                        else:
-                            self.logger.warning(f"Sheet {sheet_count} optimization failed, stopping")
-                            break
+                        while remaining_panels and sheet_count < max_sheets:
+                            sheet_count += 1
+
+                            # Find the best sheet size for remaining panels
+                            best_result = None
+                            best_sheet = None
+
+                            # Test all available sheet sizes for current remaining panels
+                            for test_sheet in available_sheets:
+                                # Optimize current sheet with this size
+                                sheet_constraints = OptimizationConstraints(
+                                    max_sheets=1,
+                                    kerf_width=constraints.kerf_width,
+                                    min_waste_piece=constraints.min_waste_piece,
+                                    allow_rotation=constraints.allow_rotation,
+                                    material_separation=False,
+                                    time_budget=constraints.time_budget / max_sheets,  # Distribute time budget
+                                    target_efficiency=constraints.target_efficiency
+                                )
+
+                                test_result = self._optimize_with_timeout(
+                                    algorithm, remaining_panels, test_sheet, sheet_constraints
+                                )
+
+                                # Choose best result based on panels placed and efficiency
+                                if test_result and len(test_result.panels) > 0:
+                                    if (best_result is None or
+                                        len(test_result.panels) > len(best_result.panels) or
+                                        (len(test_result.panels) == len(best_result.panels) and
+                                         test_result.efficiency > best_result.efficiency)):
+                                        best_result = test_result
+                                        best_sheet = test_sheet
+
+                            # Use the best result found
+                            result = best_result
+
+                            if result and len(result.panels) > 0:
+                                result.sheet_id = sheet_count
+                                result.material_block = normalized_material
+                                results.append(result)
+
+                                self.logger.info(f"Sheet {sheet_count}: {len(result.panels)} panels placed on {best_sheet.width}×{best_sheet.height}mm with {result.efficiency:.1%} efficiency")
+
+                                # Remove placed panels from remaining list
+                                # Fix: Handle individual panel IDs correctly (e.g., "562210_1", "562210_2")
+                                new_remaining = []
+                                for panel in remaining_panels:
+                                    # Count how many individual panels with base ID were placed
+                                    base_id = panel.id
+                                    placed_count = sum(1 for p in result.panels
+                                                     if p.panel.id == base_id or p.panel.id.startswith(f"{base_id}_"))
+
+                                    if placed_count < panel.quantity:
+                                        # Create panel with reduced quantity
+                                        remaining_panel = Panel(
+                                            id=panel.id,
+                                            width=panel.width,
+                                            height=panel.height,
+                                            quantity=panel.quantity - placed_count,
+                                            material=panel.material,
+                                            thickness=panel.thickness,
+                                            priority=panel.priority,
+                                            allow_rotation=panel.allow_rotation,
+                                            block_order=panel.block_order,
+                                            pi_code=panel.pi_code,
+                                            expanded_width=panel.expanded_width,
+                                            expanded_height=panel.expanded_height
+                                        )
+                                        new_remaining.append(remaining_panel)
+
+                                        self.logger.debug(
+                                            f"Panel {base_id}: {placed_count}/{panel.quantity} placed, "
+                                            f"{remaining_panel.quantity} remaining"
+                                        )
+                                    else:
+                                        self.logger.debug(f"Panel {base_id}: All {panel.quantity} panels placed")
+                                remaining_panels = new_remaining
+
+                                self.logger.info(
+                                    f"Sheet {sheet_count}: {len(result.panels)} panels placed, "
+                                    f"efficiency {result.efficiency:.1%}, {len(remaining_panels)} panel types remaining"
+                                )
+                            else:
+                                self.logger.warning(f"Sheet {sheet_count} optimization failed, stopping")
+                                break
 
                     # Log final results
                     total_placed = sum(len(r.panels) for r in results)
@@ -627,13 +704,19 @@ class OptimizationEngine:
             # Monitor resource usage during optimization
             if not self.performance_monitor.check_resource_limits():
                 self.logger.warning("Resource limits exceeded, using conservative approach")
-                constraints.time_budget = min(constraints.time_budget, 5.0)
+                if constraints.time_budget > 0:  # Only apply time limit if > 0
+                    constraints.time_budget = min(constraints.time_budget, 5.0)
 
-            # Use timeout manager for time-limited execution
-            result = self.timeout_manager.execute_with_timeout(
-                run_optimization,
-                timeout=constraints.time_budget
-            )
+            # Use timeout manager for time-limited execution, or run directly if no time limit
+            if constraints.time_budget > 0:
+                result = self.timeout_manager.execute_with_timeout(
+                    run_optimization,
+                    timeout=constraints.time_budget
+                )
+            else:
+                # No time limit - run until completion
+                self.logger.info(f"Running {algorithm.name} with no time limit until completion")
+                result = run_optimization()
 
             if result:
                 # Validate result integrity
@@ -741,6 +824,16 @@ class OptimizationEngine:
 
         # Return empty result if fallback also fails
         return self._create_empty_result(sheet, algorithm.name, start_time)
+
+    def _group_panels_by_material(self, panels: List[Panel]) -> Dict[str, List[Panel]]:
+        """Group panels by their material type"""
+        material_groups = {}
+        for panel in panels:
+            material = panel.material
+            if material not in material_groups:
+                material_groups[material] = []
+            material_groups[material].append(panel)
+        return material_groups
 
 
 class PerformanceMonitor:

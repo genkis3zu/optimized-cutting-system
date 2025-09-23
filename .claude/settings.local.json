@@ -11,7 +11,11 @@
       "Bash(git push:*)",
       "Bash(git commit:*)",
       "Bash(find:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(del test_comprehensive.py test_simple.py)",
+      "Bash(taskkill:*)",
+      "Bash(timeout:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

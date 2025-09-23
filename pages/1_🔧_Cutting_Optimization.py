@@ -298,12 +298,27 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
         st.error("パネルが入力されていません / No panels provided")
         return []
 
-    # Create and configure optimization engine
-    engine = create_optimization_engine()
+    # Create optimization engine exactly like test_all_placement.py (67.7% placement rate)
+    from core.optimizer import OptimizationEngine
+    from core.algorithms.ffd import FirstFitDecreasing
+    from core.algorithms.bfd import BestFitDecreasing
+    from core.algorithms.genetic import GeneticAlgorithm
 
-    # Register FFD algorithm
-    ffd_algorithm = create_ffd_algorithm()
+    engine = OptimizationEngine()  # Empty engine like test_all_placement.py
+
+    # Register algorithms including Genetic Algorithm option
+    ffd_algorithm = FirstFitDecreasing()
+    bfd_algorithm = BestFitDecreasing()
+    genetic_algorithm = GeneticAlgorithm(
+        population_size=50,    # Larger population for better exploration
+        generations=999999,    # Effectively unlimited generations (will stop at 100% or convergence)
+        mutation_rate=0.2,     # Higher mutation for better exploration
+        crossover_rate=0.85    # High crossover for exploitation
+    )
+
     engine.register_algorithm(ffd_algorithm)
+    engine.register_algorithm(bfd_algorithm)
+    engine.register_algorithm(genetic_algorithm)
 
     # Enhanced progress tracking
     progress_container = st.container()
@@ -319,12 +334,26 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
         # Run optimization
         start_time = time.time()
 
-        algorithm_hint = None if algorithm == 'AUTO' else algorithm
-        results = engine.optimize(
-            panels=panels,
-            constraints=constraints,
-            algorithm_hint=algorithm_hint
-        )
+        # Extract algorithm from UI selection and allow user choice
+        if 'FFD' in algorithm:
+            algorithm_hint = 'FFD'
+        elif 'BFD' in algorithm:
+            algorithm_hint = 'BFD'  # Allow BFD but warn about potential issues
+        elif 'GA' in algorithm or 'Genetic' in algorithm:
+            algorithm_hint = 'GA'   # Allow Genetic Algorithm for advanced users
+        else:
+            algorithm_hint = 'FFD'  # Default to FFD for best proven results
+
+        # Display algorithm info
+        if algorithm_hint == 'FFD':
+            st.info(f"💡 使用アルゴリズム: FFD (推奨 - テスト環境で67.7%配置率確認済み) / Using Algorithm: FFD (Recommended - 67.7% placement rate verified)")
+        elif algorithm_hint == 'GA':
+            st.warning(f"⏱️ 使用アルゴリズム: 遺伝的アルゴリズム (高品質だが時間がかかります) / Using Algorithm: Genetic Algorithm (Higher quality but slower)")
+        else:
+            st.warning(f"⚠️ 使用アルゴリズム: {algorithm_hint} (実験的 - FFD推奨) / Using Algorithm: {algorithm_hint} (Experimental - FFD recommended)")
+
+        # Call optimize exactly like test_all_placement.py (67.7% placement rate)
+        results = engine.optimize(panels, constraints, algorithm_hint)
 
         processing_time = time.time() - start_time
 

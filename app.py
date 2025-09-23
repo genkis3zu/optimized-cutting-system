@@ -1,486 +1,411 @@
 """
-Steel Cutting Optimization System - Main Application
-鋼板切断最適化システム - メインアプリケーション
+Steel Cutting Optimization System - Dashboard Homepage
+鋼板切断最適化システム - ダッシュボードホームページ
 
-A Streamlit-based application for optimizing steel panel cutting operations
-with guillotine cut constraints.
+Main dashboard for the steel cutting optimization system with system overview
 """
 
 import streamlit as st
-import logging
-import time
 import pandas as pd
-from typing import List, Optional
+from typing import List, Dict, Optional
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
 # Import core modules
-from core.models import Panel, SteelSheet, PlacementResult
-from core.optimizer import create_optimization_engine
-from core.algorithms.ffd import create_ffd_algorithm
-from ui.components import (
-    PanelInputComponent,
-    SteelSheetComponent,
-    OptimizationSettingsComponent
-)
-
-
-def setup_logging():
-    """Configure logging for the application"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+from core.material_manager import get_material_manager
 
 
 def setup_page_config():
-    """Configure Streamlit page settings"""
+    """Configure Streamlit page settings for dashboard"""
     st.set_page_config(
-        page_title="鋼板切断最適化システム - Steel Cutting Optimizer",
-        page_icon="⚡",
+        page_title="Steel Cutting System Dashboard",
+        page_icon="🏠",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="collapsed"
     )
 
-
-def render_header():
-    """Render application header"""
-    st.title("🔧 鋼板切断最適化システム")
-    st.subheader("Steel Cutting Optimization System with Guillotine Constraints")
-    
+    # Enhanced CSS for dashboard
     st.markdown("""
-    **システム概要 / System Overview:**
-    - ギロチンカット制約下での2Dビンパッキング最適化
-    - 2D bin packing optimization with guillotine cut constraints
-    - 材料効率向上と作業時間短縮を実現 
-    - Achieve material efficiency improvement and work time reduction
-    """)
+    <style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .dashboard-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    .dashboard-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+    .metric-item {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 5px solid #667eea;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    .quick-action-btn {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 25px;
+        border: none;
+        text-decoration: none;
+        display: inline-block;
+        margin: 0.5rem;
+        transition: all 0.3s;
+    }
+    .quick-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .feature-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    .recent-activity {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #28a745;
+        margin: 0.5rem 0;
+    }
+    .navigation-card {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .navigation-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 
-def create_visualization_placeholder(result: PlacementResult) -> str:
-    """Create simple text visualization of placement result"""
-    if not result or not result.panels:
-        return "No panels placed"
-    
-    viz = f"📊 Cutting Plan Visualization\n\n"
-    viz += f"Sheet: {result.sheet.width:.0f} × {result.sheet.height:.0f} mm\n"
-    viz += f"Material: {result.material_block}\n"
-    viz += f"Efficiency: {result.efficiency:.1%}\n\n"
-    
-    viz += "Placed Panels:\n"
-    for i, placed_panel in enumerate(result.panels, 1):
-        panel = placed_panel.panel
-        viz += f"{i:2d}. {panel.id}: "
-        viz += f"{placed_panel.actual_width:.0f}×{placed_panel.actual_height:.0f}mm "
-        viz += f"at ({placed_panel.x:.0f}, {placed_panel.y:.0f}) "
-        viz += f"{'[ROTATED]' if placed_panel.rotated else ''}\n"
-    
-    return viz
+def render_dashboard_header():
+    """Render enhanced dashboard header"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>🏠 鋼板切断最適化システム ダッシュボード</h1>
+        <h2>Steel Cutting Optimization System Dashboard</h2>
+        <p>ギロチンカット制約下での2Dビンパッキング最適化システム</p>
+        <p>2D bin packing optimization with guillotine cut constraints</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-def render_enhanced_results(results: List[PlacementResult]):
-    """Render enhanced optimization results with visualization"""
-    if not results:
-        st.warning("最適化結果がありません / No optimization results")
+def render_system_overview():
+    """Render system overview and metrics"""
+    material_manager = get_material_manager()
+    summary = material_manager.get_inventory_summary()
+
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("📊 システム概要 / System Overview")
+
+    # System metrics - simplified without cost/value data
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div class="metric-item">
+            <h3 style="color: #667eea; margin: 0;">材料在庫</h3>
+            <h2 style="margin: 0;">{summary['total_sheets']}</h2>
+            <p style="margin: 0; color: #666;">Total Materials</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+        <div class="metric-item">
+            <h3 style="color: #28a745; margin: 0;">材質種類</h3>
+            <h2 style="margin: 0;">{summary['material_types']}</h2>
+            <p style="margin: 0; color: #666;">Material Types</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        recent_optimizations = len(st.session_state.get('optimization_results', []))
+        st.markdown(f"""
+        <div class="metric-item">
+            <h3 style="color: #dc3545; margin: 0;">最近の最適化</h3>
+            <h2 style="margin: 0;">{recent_optimizations}</h2>
+            <p style="margin: 0; color: #666;">Recent Optimizations</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_material_overview():
+    """Render material inventory overview"""
+    material_manager = get_material_manager()
+
+    if not material_manager.inventory:
+        st.markdown("""
+        <div class="dashboard-card">
+            <h3>⚠️ 材料在庫が空です / Material Inventory is Empty</h3>
+            <p>システムを使用するには、まず材料管理ページで材料を追加してください。</p>
+            <p>Please add materials via the Material Management page to start using the system.</p>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
-    st.success(f"✅ 最適化完了 / Optimization completed: {len(results)} sheet(s)")
+    summary = material_manager.get_inventory_summary()
 
-    # Summary metrics
-    total_panels = sum(len(result.panels) for result in results)
-    avg_efficiency = sum(result.efficiency for result in results) / len(results)
-    total_cost = sum(result.cost for result in results)
-    total_time = sum(result.processing_time for result in results)
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("📦 材料在庫概要 / Material Inventory Overview")
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Material breakdown visualization
+    if summary['by_material_type']:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Pie chart for material distribution
+            fig_pie = px.pie(
+                values=[data['count'] for data in summary['by_material_type'].values()],
+                names=list(summary['by_material_type'].keys()),
+                title="材質別分布 / Distribution by Material Type",
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col2:
+            # Bar chart for area distribution
+            fig_bar = px.bar(
+                x=list(summary['by_material_type'].keys()),
+                y=[data['total_area'] for data in summary['by_material_type'].values()],
+                title="材質別面積 / Area by Material Type",
+                labels={'x': 'Material Type', 'y': 'Total Area (mm²)'},
+                color_discrete_sequence=['#667eea']
+            )
+            fig_bar.update_layout(showlegend=False)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        # Material summary table
+        st.subheader("📋 材質別サマリー / Material Summary")
+        breakdown_data = []
+        for material_type, data in summary['by_material_type'].items():
+            breakdown_data.append({
+                '材質 / Material Type': material_type,
+                '数量 / Count': data['count'],
+                '総面積 / Total Area (mm²)': f"{data['total_area']:,.0f}",
+                '平均面積 / Avg Area (mm²)': f"{data['total_area']/data['count']:,.0f}"
+            })
+
+        df_breakdown = pd.DataFrame(breakdown_data)
+        st.dataframe(df_breakdown, use_container_width=True, hide_index=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_quick_actions():
+    """Render quick action buttons"""
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("🚀 クイックアクション / Quick Actions")
+
+    col1, col2 = st.columns(2)
+
     with col1:
-        st.metric("配置パネル数 / Placed Panels", total_panels)
+        if st.button("🔧 切断最適化を開始 / Start Cutting Optimization",
+                    use_container_width=True, type="primary"):
+            st.switch_page("pages/1_🔧_Cutting_Optimization.py")
+
     with col2:
-        st.metric("平均効率 / Average Efficiency", f"{avg_efficiency:.1%}")
-    with col3:
-        st.metric("総コスト / Total Cost", f"¥{total_cost:,.0f}")
-    with col4:
-        st.metric("処理時間 / Processing Time", f"{total_time:.2f}s")
+        if st.button("📦 材料管理 / Manage Materials",
+                    use_container_width=True):
+            st.switch_page("pages/2_📦_Material_Management.py")
 
-    # Interactive visualization
-    from ui.visualizer import render_cutting_visualization
-    render_cutting_visualization(results)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Export options
-    st.subheader("📤 エクスポート / Export Options")
+
+def render_recent_activity():
+    """Render recent activity section"""
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("📈 最近のアクティビティ / Recent Activity")
+
+    # Check for recent optimization results
+    if 'optimization_results' in st.session_state and st.session_state.optimization_results:
+        results = st.session_state.optimization_results
+        total_panels = sum(len(result.panels) for result in results)
+        avg_efficiency = sum(result.efficiency for result in results) / len(results)
+        total_cost = sum(result.cost for result in results)
+
+        st.markdown(f"""
+        <div class="recent-activity">
+            <h4>✅ 最新の最適化結果 / Latest Optimization Result</h4>
+            <p><strong>シート数:</strong> {len(results)} | <strong>パネル数:</strong> {total_panels} |
+            <strong>平均効率:</strong> {avg_efficiency:.1%} | <strong>コスト:</strong> ¥{total_cost:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("まだ最適化を実行していません。切断最適化ページで開始してください。")
+        st.info("No optimizations run yet. Start with the Cutting Optimization page.")
+
+    # System status
+    material_manager = get_material_manager()
+    inventory_status = "正常" if len(material_manager.inventory) > 0 else "要設定"
+    status_color = "#28a745" if len(material_manager.inventory) > 0 else "#dc3545"
+
+    st.markdown(f"""
+    <div class="recent-activity">
+        <h4>🔧 システム状態 / System Status</h4>
+        <p><strong>材料在庫:</strong> <span style="color: {status_color}">{inventory_status}</span> |
+        <strong>最終更新:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_features_overview():
+    """Render system features overview"""
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("🎯 システム機能 / System Features")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("📋 作業指示書生成 / Generate Work Instructions"):
-            generate_work_instructions(results)
+        st.markdown("""
+        <div class="feature-card">
+            <h3>🔧 切断最適化</h3>
+            <p>ギロチンカット制約下での高効率2Dビンパッキング</p>
+            <small>High-efficiency 2D bin packing with guillotine constraints</small>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
-        if st.button("📊 レポート出力 / Export Report"):
-            export_optimization_report(results)
+        st.markdown("""
+        <div class="feature-card">
+            <h3>📦 材料管理</h3>
+            <p>包括的な材料在庫管理とコスト追跡</p>
+            <small>Comprehensive material inventory management and cost tracking</small>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col3:
-        if st.button("💾 結果保存 / Save Results"):
-            save_optimization_results(results)
+        st.markdown("""
+        <div class="feature-card">
+            <h3>📊 可視化</h3>
+            <p>インタラクティブな切断レイアウト表示</p>
+            <small>Interactive cutting layout visualization</small>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Key benefits
+    st.markdown("#### 🌟 主な利点 / Key Benefits")
+    benefits = [
+        "✅ 材料効率向上 (10-30% waste reduction)",
+        "✅ 作業時間短縮 (Optimized cutting sequences)",
+        "✅ コスト削減 (Material cost optimization)",
+        "✅ 品質向上 (Precision cutting plans)"
+    ]
+
+    col1, col2 = st.columns(2)
+    for i, benefit in enumerate(benefits):
+        if i % 2 == 0:
+            col1.markdown(benefit)
+        else:
+            col2.markdown(benefit)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
-def generate_work_instructions(results: List[PlacementResult]):
-    """Generate work instructions for cutting"""
-    try:
-        from cutting.instruction import WorkInstructionGenerator
-        from cutting.sequence import CuttingSequenceOptimizer
+def render_system_info():
+    """Render system information"""
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.subheader("ℹ️ システム情報 / System Information")
 
-        generator = WorkInstructionGenerator()
-        optimizer = CuttingSequenceOptimizer()
+    col1, col2 = st.columns(2)
 
-        with st.spinner("作業指示書を生成中... / Generating work instructions..."):
-            for i, result in enumerate(results, 1):
-                # Optimize cutting sequence
-                optimized_sequence = optimizer.optimize_sequence(
-                    result.panels,
-                    result.sheet,
-                    strategy="efficiency_first"
-                )
+    with col1:
+        st.markdown("""
+        **📋 対応データ形式 / Supported Data Formats:**
+        - TSV (Tab-separated values)
+        - CSV (Comma-separated values)
+        - 手動入力 / Manual input
+        - ファイルアップロード / File upload
+        """)
 
-                # Generate work instruction
-                work_instruction = generator.generate_work_instruction(
-                    sheet_id=f"SHEET_{i:03d}",
-                    placed_panels=optimized_sequence,
-                    sheet_specs=result.sheet,
-                    constraints={
-                        'kerf_width': 3.5,
-                        'material_type': result.material_block
-                    }
-                )
+    with col2:
+        st.markdown("""
+        **⚙️ 最適化アルゴリズム / Optimization Algorithms:**
+        - FFD (First Fit Decreasing)
+        - BFD (Best Fit Decreasing)
+        - ハイブリッド最適化 / Hybrid optimization
+        """)
 
-                st.success(f"✅ Sheet {i} 作業指示書生成完了")
+    st.markdown("""
+    **🎯 対象製造業 / Target Industries:**
+    鋼板加工、金属加工、建材製造、自動車部品、家電製造
+    Steel processing, Metal fabrication, Construction materials, Automotive parts, Appliance manufacturing
+    """)
 
-                # Display key information
-                with st.expander(f"📋 Sheet {i} 作業指示書詳細"):
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.write("**基本情報:**")
-                        st.write(f"- シートID: {work_instruction.sheet_id}")
-                        st.write(f"- 材質: {work_instruction.material_type}")
-                        st.write(f"- ステップ数: {work_instruction.total_steps}")
-                        st.write(f"- 予想時間: {work_instruction.estimated_total_time:.1f}分")
-
-                    with col2:
-                        st.write("**品質情報:**")
-                        st.write(f"- 複雑度: {work_instruction.complexity_score:.2f}")
-                        st.write(f"- 切断長: {work_instruction.total_cut_length:.0f}mm")
-                        st.write(f"- 安全注意: {len(work_instruction.safety_notes)}項目")
-
-    except Exception as e:
-        st.error(f"作業指示書生成エラー: {str(e)}")
-
-
-def export_optimization_report(results: List[PlacementResult]):
-    """Export optimization report"""
-    try:
-        from cutting.export import DocumentExporter
-        import tempfile
-        import os
-
-        exporter = DocumentExporter()
-
-        with st.spinner("レポートを出力中... / Exporting report..."):
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                # Export efficiency report
-                success = exporter.export_efficiency_report_excel(
-                    results=results,
-                    file_path=tmp_file.name.replace('.pdf', '.xlsx'),
-                    include_charts=True
-                )
-
-                if success:
-                    st.success("✅ レポート出力完了")
-
-                    # Provide download button
-                    with open(tmp_file.name.replace('.pdf', '.xlsx'), 'rb') as f:
-                        st.download_button(
-                            "📁 レポートダウンロード / Download Report",
-                            data=f.read(),
-                            file_name=f"optimization_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-
-                    # Clean up
-                    os.unlink(tmp_file.name.replace('.pdf', '.xlsx'))
-                else:
-                    st.error("レポート出力に失敗しました")
-
-    except Exception as e:
-        st.error(f"レポート出力エラー: {str(e)}")
-
-
-def save_optimization_results(results: List[PlacementResult]):
-    """Save optimization results to session storage"""
-    try:
-        import json
-        from datetime import datetime
-
-        # Prepare data for storage
-        results_data = {
-            'timestamp': datetime.now().isoformat(),
-            'total_sheets': len(results),
-            'summary': {
-                'total_panels': sum(len(r.panels) for r in results),
-                'average_efficiency': sum(r.efficiency for r in results) / len(results),
-                'total_cost': sum(r.cost for r in results),
-                'total_time': sum(r.processing_time for r in results)
-            },
-            'sheets': []
-        }
-
-        for i, result in enumerate(results, 1):
-            sheet_data = {
-                'sheet_id': f"SHEET_{i:03d}",
-                'material': result.material_block,
-                'algorithm': result.algorithm,
-                'efficiency': result.efficiency,
-                'panels_count': len(result.panels),
-                'waste_area': result.waste_area,
-                'cut_length': result.cut_length,
-                'processing_time': result.processing_time,
-                'panels': [
-                    {
-                        'id': p.panel.id,
-                        'x': p.x,
-                        'y': p.y,
-                        'width': p.actual_width,
-                        'height': p.actual_height,
-                        'rotated': p.rotated
-                    }
-                    for p in result.panels
-                ]
-            }
-            results_data['sheets'].append(sheet_data)
-
-        # Store in session state
-        st.session_state.saved_results = results_data
-
-        st.success("✅ 結果を保存しました / Results saved successfully")
-
-        # Show summary
-        with st.expander("保存された結果サマリー / Saved Results Summary"):
-            st.json(results_data['summary'])
-
-    except Exception as e:
-        st.error(f"結果保存エラー: {str(e)}")
-
-
-def render_results(results: List[PlacementResult]):
-    """Legacy render results (kept for compatibility)"""
-    render_enhanced_results(results)
-
-
-def run_optimization(panels: List[Panel], sheet: SteelSheet, algorithm: str, constraints):
-    """Run optimization with progress tracking"""
-    if not panels:
-        st.error("パネルが入力されていません / No panels provided")
-        return []
-    
-    # Create and configure optimization engine
-    engine = create_optimization_engine()
-    
-    # Register FFD algorithm
-    ffd_algorithm = create_ffd_algorithm()
-    engine.register_algorithm(ffd_algorithm)
-    
-    # Progress tracking
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        status_text.text("最適化を開始しています... / Starting optimization...")
-        progress_bar.progress(10)
-        
-        # Run optimization
-        start_time = time.time()
-        
-        algorithm_hint = None if algorithm == 'AUTO' else algorithm
-        results = engine.optimize(
-            panels=panels,
-            constraints=constraints,
-            algorithm_hint=algorithm_hint
-        )
-        
-        processing_time = time.time() - start_time
-        
-        progress_bar.progress(100)
-        status_text.text(f"最適化完了 / Optimization completed in {processing_time:.2f}s")
-        
-        return results
-    
-    except Exception as e:
-        st.error(f"最適化エラー / Optimization error: {str(e)}")
-        return []
-    
-    finally:
-        # Clean up progress indicators
-        time.sleep(1)
-        progress_bar.empty()
-        status_text.empty()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def main():
-    """Main application function"""
-    setup_logging()
+    """Main dashboard function"""
     setup_page_config()
+    render_dashboard_header()
 
-    # Sidebar for navigation
-    with st.sidebar:
-        st.header("ナビゲーション / Navigation")
+    # Quick navigation
+    render_quick_actions()
 
-        page = st.radio(
-            "ページ選択 / Select Page",
-            ['optimization', 'material_management'],
-            format_func=lambda x: {
-                'optimization': '🔧 最適化 / Optimization',
-                'material_management': '📦 材料管理 / Material Management'
-            }[x]
-        )
+    # Main dashboard content
+    col1, col2 = st.columns([2, 1])
 
-        st.divider()
+    with col1:
+        render_system_overview()
+        render_material_overview()
 
-    if page == 'optimization':
-        render_optimization_page()
-    elif page == 'material_management':
-        render_material_management_page()
+    with col2:
+        render_recent_activity()
 
+    # Full width sections
+    render_features_overview()
 
-def render_optimization_page():
-    """Render optimization page"""
-    render_header()
+    # Footer
+    st.markdown("---")
+    render_system_info()
 
-    # Sidebar for input
-    with st.sidebar:
-        st.header("入力設定 / Input Settings")
-        
-        # Panel input component with material validation
-        from core.material_manager import get_material_manager
-        material_manager = get_material_manager()
-
-        # Auto-load sample data if empty
-        if len(material_manager.inventory) == 0:
-            st.info("材料在庫が空です。サンプルデータを読み込み中...")
-            sample_file = "sample_data/sizaidata.txt"
-            if os.path.exists(sample_file):
-                added_count = material_manager.load_from_sample_data(sample_file)
-                if added_count > 0:
-                    st.success(f"{added_count}個の材料を読み込みました")
-
-        panel_component = PanelInputComponent()
-        panels = panel_component.render()
-
-        # Material validation for panels
-        if panels:
-            st.write("### 材料検証 / Material Validation")
-            validation_issues = []
-            for panel in panels:
-                is_valid, message = material_manager.validate_panel_against_inventory(
-                    panel.material, panel.thickness, panel.width, panel.height
-                )
-                if not is_valid:
-                    validation_issues.append(f"⚠️ Panel {panel.id}: {message}")
-
-            if validation_issues:
-                with st.expander("⚠️ 材料検証エラー / Material Validation Issues"):
-                    for issue in validation_issues:
-                        st.warning(issue)
-                    st.info("材料管理ページで在庫を確認・追加してください")
-            else:
-                st.success("✅ すべてのパネルで材料検証が通りました")
-
-        st.divider()
-
-        # Steel sheet component
-        sheet_component = SteelSheetComponent()
-        sheet = sheet_component.render()
-
-        st.divider()
-
-        # Optimization settings
-        settings_component = OptimizationSettingsComponent()
-        algorithm, constraints = settings_component.render()
-
-        st.divider()
-
-        # Optimization button
-        optimize_button = st.button(
-            "🚀 最適化実行 / Run Optimization",
-            type="primary",
-            disabled=len(panels) == 0,
-            use_container_width=True
-        )
-
-    # Main content area - show panel details if requested
-    if hasattr(st.session_state, 'show_panel_details') and st.session_state.show_panel_details and panels:
-        from ui.visualizer import render_panel_details
-        render_panel_details(panels, show_validation=True)
-
-        if st.button("パネル詳細を閉じる / Close Panel Details"):
-            st.session_state.show_panel_details = False
-            st.rerun()
-
-        st.divider()
-
-    # Optimization execution and results
-    if optimize_button and panels:
-        st.header("🚀 最適化結果 / Optimization Results")
-
-        with st.spinner("最適化を実行中... / Running optimization..."):
-            results = run_optimization(panels, sheet, algorithm, constraints)
-
-        if results:
-            # Enhanced results display
-            render_enhanced_results(results)
-
-            # Store results in session state for export
-            st.session_state.optimization_results = results
-        else:
-            st.error("最適化に失敗しました / Optimization failed")
-
-    elif not panels:
-        # Show welcome message and instructions
-        st.info("""
-        ### 使用方法 / How to Use
-
-        1. **材料管理 / Material Management**: まず材料在庫を設定してください
-           - 材料管理ページでサンプルデータを読み込み
-           - Setup material inventory first
-
-        2. **パネル入力 / Panel Input**: パネル情報を入力
-           - サンプルデータまたは手動入力
-           - Sample data or manual input
-
-        3. **最適化実行 / Run Optimization**: 最適化を実行して結果を確認
-           - Execute optimization and view results
-
-        ### 実際のデータ対応 / Real Data Support
-
-        本システムは実際の製造データ形式に対応しています:
-        - data0923.txt (切断データ)
-        - sizaidata.txt (材料在庫データ)
-        """)
-
-        if st.button("📦 材料管理ページへ / Go to Material Management"):
-            st.session_state.page_redirect = 'material_management'
-            st.rerun()
-
-    else:
-        st.info("パネルを入力して最適化を実行してください / Please input panels and run optimization")
-
-
-def render_material_management_page():
-    """Render material management page"""
-    from ui.material_management_ui import render_material_management
-    render_material_management()
-
-
-# Import os for file operations
-import os
+    # Footer
+    st.markdown("""
+    <div style="text-align: center; padding: 2rem; color: #666;">
+        <p>© 2024 Steel Cutting Optimization System | Built with Streamlit</p>
+        <p>鋼板切断最適化システム | Streamlitで構築</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

@@ -550,7 +550,10 @@ class BestFitDecreasing(OptimizationAlgorithm):
                     thickness=panel.thickness,
                     priority=panel.priority,
                     allow_rotation=panel.allow_rotation,
-                    block_order=panel.block_order
+                    block_order=panel.block_order,
+                    pi_code=panel.pi_code,
+                    expanded_width=panel.expanded_width,
+                    expanded_height=panel.expanded_height
                 )
                 individual_panels.append(individual_panel)
 
@@ -637,15 +640,17 @@ class BestFitDecreasing(OptimizationAlgorithm):
         Advanced sorting key for Best Fit Decreasing
         Best Fit Decreasing用の高度なソートキー
         """
-        # Primary: Area (larger first)
-        area = panel.area
+        # Primary: Cutting area (larger first) - use expanded dimensions if available
+        area = panel.cutting_area
 
         # Secondary: Aspect ratio preference (closer to square is better for packing)
-        aspect_ratio = max(panel.width, panel.height) / min(panel.width, panel.height)
+        cutting_w = panel.cutting_width
+        cutting_h = panel.cutting_height
+        aspect_ratio = max(cutting_w, cutting_h) / min(cutting_w, cutting_h)
         aspect_penalty = aspect_ratio  # Lower penalty is better
 
         # Tertiary: Perimeter (larger perimeter panels first, they're harder to place)
-        perimeter = 2 * (panel.width + panel.height)
+        perimeter = 2 * (cutting_w + cutting_h)
 
         # Quaternary: Priority (higher priority first)
         priority = panel.priority

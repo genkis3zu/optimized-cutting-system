@@ -188,13 +188,27 @@ class PlacedPanel:
     
     @property
     def actual_width(self) -> float:
-        """Get actual width considering rotation"""
-        return self.panel.height if self.rotated else self.panel.width
-    
+        """Get actual width considering rotation and cutting dimensions"""
+        if hasattr(self, '_actual_width'):
+            return self._actual_width
+
+        # Use cutting dimensions if available, otherwise original dimensions
+        if self.rotated:
+            return getattr(self.panel, 'cutting_height', self.panel.height)
+        else:
+            return getattr(self.panel, 'cutting_width', self.panel.width)
+
     @property
     def actual_height(self) -> float:
-        """Get actual height considering rotation"""
-        return self.panel.width if self.rotated else self.panel.height
+        """Get actual height considering rotation and cutting dimensions"""
+        if hasattr(self, '_actual_height'):
+            return self._actual_height
+
+        # Use cutting dimensions if available, otherwise original dimensions
+        if self.rotated:
+            return getattr(self.panel, 'cutting_width', self.panel.width)
+        else:
+            return getattr(self.panel, 'cutting_height', self.panel.height)
     
     @property
     def bounds(self) -> Tuple[float, float, float, float]:
@@ -325,12 +339,12 @@ class OptimizationConstraints:
     Constraints for optimization process
     最適化プロセスの制約条件
     """
-    max_sheets: int = 10  # Maximum number of sheets to use
-    kerf_width: float = 3.5  # mm - cutting allowance
+    max_sheets: int = 1000  # Allow unlimited sheets for complete placement
+    kerf_width: float = 0.0  # mm - thin sheet cutting with no kerf allowance
     min_waste_piece: float = 50.0  # mm - minimum usable waste piece
     allow_rotation: bool = True
     material_separation: bool = False  # Enable multi-sheet optimization by default
-    time_budget: float = 30.0  # seconds
+    time_budget: float = 0.0  # No time limit - run until completion
     target_efficiency: float = 0.75  # 75%
     
     def validate(self) -> bool:

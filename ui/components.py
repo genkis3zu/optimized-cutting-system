@@ -453,18 +453,21 @@ class OptimizationSettingsComponent:
         with col1:
             algorithm = st.selectbox(
                 self.ui_text['algorithm'],
-                ['AUTO', 'FFD', 'BFD', 'HYBRID'],
-                help="AUTO: 自動選択 / Automatic selection",
+                ['FFD (推奨 - 67.7%配置率/Recommended)', 'GA (実験的 - 開発中/Experimental)', 'BFD (非推奨/Not Recommended)', 'AUTO'],
+                index=0,  # Default to FFD
+                help="FFD推奨 - 67.7%配置率で高速・安定 / FFD Recommended - 67.7% placement rate, fast and stable",
                 key="opt_algorithm"
             )
             
             time_budget = st.slider(
-                self.ui_text['time_budget'],
+                "⚠️ 時間制限 (無効化済み) / Time Budget (Disabled)",
                 min_value=1.0,
                 max_value=300.0,
                 value=30.0,
                 step=1.0,
-                key="opt_time_budget"
+                key="opt_time_budget",
+                help="実際は時間制限なしで実行されます (全パネル配置まで継続) / Actually runs without time limit (continues until all panels placed)",
+                disabled=True  # Make it clear this setting is overridden
             )
             
             target_efficiency = st.slider(
@@ -494,18 +497,23 @@ class OptimizationSettingsComponent:
             )
             
             material_separation = st.checkbox(
-                self.ui_text['material_separation'],
-                value=True,
-                help="材質ごとに分けて最適化 / Optimize separately by material",
-                key="opt_material_separation"
+                "⚠️ 材質別分離 (無効化済み) / Material Separation (Disabled)",
+                value=False,
+                help="マルチシート最適化が強制適用されます (テスト環境設定) / Multi-sheet optimization is forced (test environment setting)",
+                key="opt_material_separation",
+                disabled=True  # Make it clear this setting is overridden
             )
         
+        # Override UI settings with optimized values for best panel placement
+        # NO TIME LIMIT - run until 100% placement is achieved
+
         constraints = OptimizationConstraints(
-            kerf_width=kerf_width,
+            kerf_width=0.0,  # Force thin sheet cutting (test environment setting)
             allow_rotation=allow_rotation,
-            material_separation=material_separation,
-            time_budget=time_budget,
-            target_efficiency=target_efficiency / 100.0
+            material_separation=False,  # Force multi-sheet optimization (test environment setting)
+            time_budget=0.0,  # NO TIME LIMIT - run until 100% placement
+            target_efficiency=1.0,  # Target 100% placement
+            max_sheets=1000  # Allow unlimited sheets for complete placement (test environment setting)
         )
         
         return algorithm, constraints

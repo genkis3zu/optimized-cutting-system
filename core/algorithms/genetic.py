@@ -45,12 +45,12 @@ class GeneticAlgorithm(OptimizationAlgorithm):
     """
 
     def __init__(self,
-                 population_size: int = 20,
-                 generations: int = 30,
-                 mutation_rate: float = 0.1,
-                 crossover_rate: float = 0.8,
-                 elite_size: int = 3,
-                 tournament_size: int = 3):
+                 population_size: int = 30,
+                 generations: int = 100,
+                 mutation_rate: float = 0.15,
+                 crossover_rate: float = 0.85,
+                 elite_size: int = 5,
+                 tournament_size: int = 5):
         super().__init__("GA")
 
         # GA Parameters
@@ -81,8 +81,8 @@ class GeneticAlgorithm(OptimizationAlgorithm):
                  sheet: SteelSheet,
                  constraints: OptimizationConstraints) -> PlacementResult:
         """
-        メイン最適化処理
-        Main optimization process
+        メイン最適化処理 - 100%配置まで継続実行
+        Main optimization process - Continue until 100% placement
         """
         if not panels:
             return PlacementResult(
@@ -98,42 +98,59 @@ class GeneticAlgorithm(OptimizationAlgorithm):
                 processing_time=0.0
             )
 
-        self.logger.info(f"GA開始: {len(panels)}パネル, 世代数={self.generations}, 集団サイズ={self.population_size}")
+        self.logger.info(f"GA開始: {len(panels)}パネル, 時間制限なし - 100%配置まで継続")
 
         start_time = time.time()
 
         # Initialize population
         self._initialize_population(panels)
 
-        # Evolution process
-        for generation in range(self.generations):
+        generation = 0
+        no_improvement_count = 0
+        max_no_improvement = 50  # Increase generations without improvement before stopping
+
+        # Evolution process - Continue until 100% placement or no improvement for long time
+        while True:
             # Evaluate population
             self._evaluate_population(panels, sheet, constraints)
 
             # Track best solution
             best_in_generation = max(self.population, key=lambda x: x.fitness)
+            improved = False
+
             if self.best_chromosome is None or best_in_generation.fitness > self.best_chromosome.fitness:
                 self.best_chromosome = best_in_generation.copy()
+                improved = True
+                no_improvement_count = 0
+            else:
+                no_improvement_count += 1
 
             self.fitness_history.append(best_in_generation.fitness)
 
-            # Early stopping if no improvement
-            if generation > 20 and len(set(self.fitness_history[-10:])) == 1:
-                self.logger.info(f"早期停止: 世代{generation}")
+            # Check if we achieved 100% placement
+            if best_in_generation.efficiency >= 1.0:
+                self.logger.info(f"100%配置達成! 世代{generation}, 効率={best_in_generation.efficiency:.1%}")
+                break
+
+            # Progress reporting
+            if generation % 50 == 0 or improved:
+                elapsed = time.time() - start_time
+                self.logger.info(f"世代{generation}: 最適効率={best_in_generation.efficiency:.1%}, 経過時間={elapsed:.1f}秒")
+
+            # Stop only if no improvement for very long time AND we have reasonable efficiency
+            if no_improvement_count >= max_no_improvement and best_in_generation.efficiency > 0.5:
+                self.logger.info(f"収束により停止: 世代{generation}, 最終効率={best_in_generation.efficiency:.1%}")
                 break
 
             # Create next generation
-            if generation < self.generations - 1:
-                self.population = self._create_next_generation()
-
-            if generation % 20 == 0:
-                self.logger.info(f"世代{generation}: 最適効率={best_in_generation.efficiency:.1%}")
+            self.population = self._create_next_generation()
+            generation += 1
 
         # Convert best chromosome to placement result
         result = self._chromosome_to_result(self.best_chromosome, panels, sheet, constraints)
 
         elapsed = time.time() - start_time
-        self.logger.info(f"GA完了: {elapsed:.2f}秒, 最終効率={result.efficiency:.1%}")
+        self.logger.info(f"GA完了: {elapsed:.2f}秒, 最終効率={result.efficiency:.1%}, 世代数={generation}")
 
         return result
 
@@ -162,25 +179,17 @@ class GeneticAlgorithm(OptimizationAlgorithm):
             self.population.append(Chromosome(sequence=sequence))
 
     def _evaluate_population(self, panels: List[Panel], sheet: SteelSheet, constraints: OptimizationConstraints):
-        """集団評価（並列処理）"""
-        def evaluate_chromosome(chromosome):
-            return self._evaluate_chromosome(chromosome, panels, sheet, constraints)
-
-        # 並列評価
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(evaluate_chromosome, chrom): chrom
-                      for chrom in self.population}
-
-            for future in as_completed(futures):
-                chromosome = futures[future]
-                try:
-                    efficiency, sheets_used = future.result()
-                    chromosome.efficiency = efficiency
-                    chromosome.sheets_used = sheets_used
-                    chromosome.fitness = self._calculate_fitness(efficiency, sheets_used)
-                except Exception as e:
-                    self.logger.warning(f"評価エラー: {e}")
-                    chromosome.fitness = 0.0
+        """集団評価（シーケンシャル処理）"""
+        # Sequential evaluation to avoid timeout issues
+        for chromosome in self.population:
+            try:
+                efficiency, sheets_used = self._evaluate_chromosome(chromosome, panels, sheet, constraints)
+                chromosome.efficiency = efficiency
+                chromosome.sheets_used = sheets_used
+                chromosome.fitness = self._calculate_fitness(efficiency, sheets_used)
+            except Exception as e:
+                self.logger.warning(f"評価エラー: {e}")
+                chromosome.fitness = 0.0
 
     def _evaluate_chromosome(self, chromosome: Chromosome, panels: List[Panel],
                            sheet: SteelSheet, constraints: OptimizationConstraints) -> Tuple[float, int]:
@@ -200,7 +209,8 @@ class GeneticAlgorithm(OptimizationAlgorithm):
             for panel in ordered_panels:
                 remaining_panels.extend([panel] * panel.quantity)
 
-            while remaining_panels and sheets_used < 10:  # Limit sheets
+            # Continue until all panels are placed (no sheet limit)
+            while remaining_panels and sheets_used < 1000:  # Use high limit to match constraints
                 placer = GuillotineBinPacker(sheet.width, sheet.height)
                 sheets_used += 1
 
