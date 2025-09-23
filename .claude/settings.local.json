@@ -15,7 +15,9 @@
       "Bash(del test_comprehensive.py test_simple.py)",
       "Bash(taskkill:*)",
       "Bash(timeout:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(touch:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

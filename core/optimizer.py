@@ -19,7 +19,15 @@ from core.models import (
 )
 from core.material_manager import get_material_manager
 from core.pi_manager import get_pi_manager
-from core.models.optimization_state import GlobalOptimizationState
+try:
+    from core.models.optimization_state import GlobalOptimizationState
+except ImportError:
+    # If optimization_state module doesn't exist, create a placeholder
+    class GlobalOptimizationState:
+        pass
+from core.algorithms.unlimited_runtime_optimizer import UnlimitedRuntimeOptimizer
+from core.algorithms.memory_manager import get_memory_manager
+from core.algorithms.spatial_index import SpatialIndex
 
 
 @dataclass
@@ -139,6 +147,39 @@ class OptimizationAlgorithm(ABC):
             return False
 
 
+class UnlimitedRuntimeAlgorithmWrapper(OptimizationAlgorithm):
+    """
+    Wrapper to adapt UnlimitedRuntimeOptimizer to OptimizationAlgorithm interface
+    """
+
+    def __init__(self, unlimited_optimizer: UnlimitedRuntimeOptimizer):
+        super().__init__("unlimited_runtime")
+        self.unlimited_optimizer = unlimited_optimizer
+
+    def optimize(
+        self,
+        panels: List[Panel],
+        sheet: SteelSheet,
+        constraints: OptimizationConstraints
+    ) -> PlacementResult:
+        """Adapt single-sheet optimization to UnlimitedRuntimeOptimizer"""
+        # Convert single sheet to list
+        sheets = [sheet]
+
+        # Convert constraints to dict format
+        constraint_dict = {
+            'time_budget': 0.0,  # No time limit
+            'target_efficiency': constraints.target_efficiency,
+            'placement_guarantee': True
+        }
+
+        return self.unlimited_optimizer.optimize(panels, sheets, constraint_dict)
+
+    def estimate_time(self, panel_count: int, complexity: float) -> float:
+        """Estimate time for unlimited runtime (returns 0 for unlimited)"""
+        return 0.0  # Unlimited runtime
+
+
 class OptimizationEngine:
     """
     Main optimization engine with algorithm selection
@@ -150,6 +191,84 @@ class OptimizationEngine:
         self.logger = logging.getLogger(__name__)
         self.performance_monitor = PerformanceMonitor()
         self.timeout_manager = TimeoutManager()
+        self.memory_manager = get_memory_manager()
+
+        # Register unlimited runtime optimizer
+        self._register_unlimited_runtime_optimizer()
+
+    def _register_unlimited_runtime_optimizer(self):
+        """Register the unlimited runtime optimizer for 100% placement guarantee"""
+        try:
+            unlimited_optimizer = UnlimitedRuntimeOptimizer()
+            # Wrap it as OptimizationAlgorithm
+            wrapper = UnlimitedRuntimeAlgorithmWrapper(unlimited_optimizer)
+            self.algorithms["unlimited_runtime"] = wrapper
+            self.logger.info("Registered UnlimitedRuntimeOptimizer for 100% placement guarantee")
+        except Exception as e:
+            self.logger.error(f"Failed to register UnlimitedRuntimeOptimizer: {e}")
+
+    def optimize_unlimited_runtime(
+        self,
+        panels: List[Panel],
+        sheets: List[SteelSheet],
+        constraints: Optional[OptimizationConstraints] = None
+    ) -> PlacementResult:
+        """
+        Optimize with 100% placement guarantee using unlimited runtime.
+
+        Args:
+            panels: Panels to place
+            sheets: Available sheets
+            constraints: Optimization constraints (time limits ignored)
+
+        Returns:
+            PlacementResult with guaranteed 100% placement
+        """
+        self.logger.info(f"Starting 100% placement guarantee optimization for {len(panels)} panels")
+
+        # Prepare memory manager for large dataset
+        self.memory_manager.optimize_memory_for_dataset_size(len(panels), len(sheets))
+
+        # Set up unlimited runtime constraints
+        if constraints is None:
+            constraints = OptimizationConstraints()
+
+        constraints.time_budget = 0.0  # No time limit
+        constraints.placement_guarantee = True  # Must place all panels
+
+        # Use unlimited runtime optimizer
+        if "unlimited_runtime" not in self.algorithms:
+            self._register_unlimited_runtime_optimizer()
+
+        unlimited_optimizer = self.algorithms["unlimited_runtime"]
+
+        try:
+            # Convert to multi-sheet optimization if needed
+            if len(sheets) == 1:
+                # Single sheet optimization
+                result = unlimited_optimizer.optimize(panels, sheets[0], constraints)
+            else:
+                # Multi-sheet optimization - use the main unlimited optimizer directly
+                from core.algorithms.unlimited_runtime_optimizer import UnlimitedRuntimeOptimizer
+                direct_optimizer = UnlimitedRuntimeOptimizer()
+                result = direct_optimizer.optimize(panels, sheets, constraints)
+
+            # Validate 100% placement
+            total_input = sum(p.quantity for p in panels)
+            placed_count = len(result.placed_panels) if hasattr(result, 'placed_panels') else (len(result.panels) if hasattr(result, 'panels') else 0)
+
+            placement_rate = (placed_count / total_input) * 100 if total_input > 0 else 0
+
+            if placement_rate < 100.0:
+                self.logger.error(f"Failed to achieve 100% placement: {placement_rate:.1f}%")
+                raise RuntimeError(f"100% placement guarantee failed: only {placement_rate:.1f}% placed")
+
+            self.logger.info(f"Successfully achieved 100% placement ({placed_count}/{total_input} panels)")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"100% placement guarantee optimization failed: {e}")
+            raise
         
     def register_algorithm(self, algorithm: OptimizationAlgorithm):
         """Register an optimization algorithm"""
@@ -194,8 +313,14 @@ class OptimizationEngine:
             f"time_budget={time_budget:.1f}s, materials={unique_materials}"
         )
 
-        # Enhanced algorithm selection logic based on Japanese manufacturing specs
+        # Enhanced algorithm selection logic with 100% placement support
         available_algorithms = list(self.algorithms.keys())
+
+        # Priority 0: 100% placement guarantee requested
+        if hasattr(constraints, 'placement_guarantee') and constraints.placement_guarantee:
+            if "unlimited_runtime" in available_algorithms:
+                self.logger.info("Selected UnlimitedRuntime: 100% placement guarantee requested")
+                return "unlimited_runtime"
 
         # Priority 1: Small, simple problems - use FFD for speed
         if panel_count <= 10 and adjusted_complexity < 0.3 and time_budget >= 1.0:
