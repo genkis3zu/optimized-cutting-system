@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.text_parser import parse_cutting_data_file
 from core.optimizer import OptimizationEngine
-from core.algorithms.guaranteed_placement import GuaranteedPlacementAlgorithm
+from core.algorithms.unlimited_runtime_optimizer import UnlimitedRuntimeOptimizer
 from core.models import OptimizationConstraints
 from core.pi_manager import PIManager
 import logging
