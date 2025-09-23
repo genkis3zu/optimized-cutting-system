@@ -28,15 +28,41 @@
 - **材料コード正規化**: KW300→KW-300等の自動変換
 - **リアルタイム検証**: パネル要求に対する在庫チェック
 
-#### ⚡ 最適化エンジン
+#### ⚡ GPU加速最適化エンジン
+- **Intel Iris Xe GPU加速**:
+  - 4.6倍の高速化（GPU vs CPU）
+  - スケーラブル処理（500+パネル対応）
+  - アダプティブバッチング（20-200パネル/バッチ）
+  - メモリ圧迫監視と自動スケーリング
+  - サーマル保護（85°C自動制御）
+
 - **複数アルゴリズム対応**:
+  - GPU加速遺伝的アルゴリズム - 高品質解
+  - GPU並列ビンパッキング - 大規模最適化
+  - 複合制約ハンドリング - 回転・材料最適化
+  - マルチシート並列処理 - 負荷分散
+
+- **100%配置保証システム**:
+  - 4段階エスカレーション（GPU→CPU自動フォールバック）
+  - 無制限ランタイム最適化
+  - 個別シート配置による完全保証
+  - リアルタイム進捗監視
+
+- **従来アルゴリズム**:
   - First Fit Decreasing (FFD) - 高速処理
   - Best Fit Decreasing (BFD) - 高効率
   - Hybrid Algorithm - バランス型
-- **ギロチンカット制約**: 実際の切断機制約に対応
-- **材質別処理**: 材料タイプごとのブロック化処理
+  - ギロチンカット制約対応
+  - 材質別ブロック化処理
 
-#### 🎨 インタラクティブUI
+#### 🎨 インタラクティブUI & GPU監視
+- **プロダクション監視ダッシュボード**:
+  - リアルタイムGPU利用率・温度監視
+  - 最適化進捗とETA表示
+  - パフォーマンス比較（GPU vs CPU）
+  - セッション管理と最適化履歴
+  - エラーハンドリングと自動復旧
+
 - **Streamlit多ページ設計**: 最適化/材料管理の分離
 - **リアルタイム可視化**: Plotlyによる切断レイアウト表示
 - **日英対応インターフェース**: バイリンガル対応
@@ -59,13 +85,28 @@ steel-cutting-system/
 ├── 📱 app.py                     # メインアプリケーション
 ├── 🧠 core/                      # コアロジック
 │   ├── models.py                 # データ構造定義
-│   ├── optimizer.py              # 最適化エンジン
+│   ├── optimizer.py              # 統合最適化エンジン
 │   ├── material_manager.py       # 材料在庫管理 ⭐新機能
 │   ├── text_parser.py            # 堅牢テキストパーサー
 │   └── algorithms/               # 最適化アルゴリズム
-│       ├── ffd.py               # First Fit Decreasing
-│       ├── bfd.py               # Best Fit Decreasing
-│       └── hybrid.py            # ハイブリッドアルゴリズム
+│       ├── 🚀 GPU加速コンポーネント
+│       │   ├── intel_iris_xe_optimizer.py      # Intel Iris Xe GPU最適化
+│       │   ├── scalable_gpu_manager.py         # 大規模ワークロード管理
+│       │   ├── gpu_bin_packing.py              # GPU並列ビンパッキング
+│       │   ├── multi_sheet_gpu_optimizer.py    # マルチシートGPU最適化
+│       │   ├── constraint_handler.py           # 複合制約ハンドリング
+│       │   ├── unlimited_runtime_optimizer.py  # 100%配置保証システム
+│       │   ├── gpu_detection.py                # GPU検出・能力評価
+│       │   ├── gpu_fallback_manager.py         # CPUフォールバック管理
+│       │   ├── memory_manager.py               # アダプティブメモリ管理
+│       │   └── spatial_index.py                # 空間インデックス最適化
+│       ├── 🔧 従来アルゴリズム
+│       │   ├── ffd.py               # First Fit Decreasing
+│       │   ├── bfd.py               # Best Fit Decreasing
+│       │   └── hybrid.py            # ハイブリッドアルゴリズム
+│       └── 📊 OpenCLカーネル
+│           ├── gpu_genetic_kernels.cl         # 遺伝的アルゴリズムカーネル
+│           └── gpu_bin_packing_kernels.cl     # ビンパッキングカーネル
 ├── ✂️ cutting/                   # 切断作業機能
 │   ├── instruction.py           # 作業指示生成
 │   ├── sequence.py              # 切断順序最適化
@@ -75,16 +116,29 @@ steel-cutting-system/
 ├── 🎨 ui/                        # ユーザーインターフェース
 │   ├── components.py            # UIコンポーネント
 │   ├── visualizer.py            # 可視化機能 ⭐新機能
-│   └── material_management_ui.py # 材料管理UI ⭐新機能
+│   ├── material_management_ui.py # 材料管理UI ⭐新機能
+│   └── gpu_optimization_monitor.py # GPUリアルタイム監視ダッシュボード ⭐Phase3
 ├── 🔌 integration/               # システム統合
 │   ├── api.py                   # REST APIエンドポイント
 │   └── erp_connector.py         # ERP/MES連携
 ├── 📊 config/                    # 設定・データ
 │   └── material_inventory.json  # 材料在庫データ ⭐新機能
+├── 📚 claudedocs/                # プロジェクト文書
+│   ├── phase1_completion_report.md       # Phase1完了報告
+│   ├── phase2_completion_report.md       # Phase2完了報告
+│   ├── phase3_completion_report.md       # Phase3完了報告
+│   ├── intel_iris_xe_gpu_acceleration_analysis.md # GPU加速分析
+│   └── memory_configuration_guide.md    # メモリ設定ガイド
 └── 🧪 tests/                     # テストスイート
     ├── unit/                    # ユニットテスト
     ├── integration/             # 統合テスト
-    └── performance/             # 性能テスト
+    ├── performance/             # 性能テスト
+    └── 🚀 GPU加速テスト
+        ├── test_gpu_detection.py           # GPU検出テスト
+        ├── test_gpu_evaluation.py          # GPU評価テスト
+        ├── test_gpu_integration.py         # GPU統合テスト
+        ├── test_phase3_scalable_manager.py # Phase3スケーラブルマネージャテスト
+        └── test_phase3_ui_integration.py   # Phase3 UI統合テスト
 ```
 
 ## 🛠️ セットアップ / Setup
