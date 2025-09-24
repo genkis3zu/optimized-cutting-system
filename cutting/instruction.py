@@ -112,7 +112,7 @@ class WorkInstructionGenerator:
     配置結果からの作業指示生成器
     """
 
-    def __init__(self, kerf_width: float = 3.5):
+    def __init__(self, kerf_width: float = 0.0):
         self.kerf_width = kerf_width
         self.logger = logging.getLogger(__name__)
 
@@ -568,6 +568,6 @@ class WorkInstructionGenerator:
         return total_time
 
 
-def create_work_instruction_generator(kerf_width: float = 3.5) -> WorkInstructionGenerator:
+def create_work_instruction_generator(kerf_width: float = 0.0) -> WorkInstructionGenerator:
     """Create work instruction generator instance"""
     return WorkInstructionGenerator(kerf_width)

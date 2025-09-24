@@ -12,6 +12,9 @@ import json
 import os
 
 from core.material_manager import MaterialInventoryManager, MaterialSheet, get_material_manager
+from ui.page_headers import render_unified_header, get_page_config
+from ui.common_styles import get_common_css
+from ui.metric_cards import render_material_metrics, render_status_card
 
 
 def setup_page():
@@ -22,34 +25,8 @@ def setup_page():
         layout="wide"
     )
 
-    # Custom CSS for professional appearance
-    st.markdown("""
-    <style>
-    .main-header {
-        background: linear-gradient(90deg, #1f77b4, #2ca02c);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #1f77b4;
-        margin-bottom: 1rem;
-    }
-    .success-message {
-        background: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Apply unified styling
+    st.markdown(get_common_css(), unsafe_allow_html=True)
 
 
 class MaterialManagementUI:
@@ -83,13 +60,14 @@ class MaterialManagementUI:
 
     def render(self):
         """Render enhanced material management interface"""
-        # Page header
-        st.markdown("""
-        <div class="main-header">
-            <h1>📦 材料在庫管理システム</h1>
-            <p>Material Inventory Management System</p>
-        </div>
-        """, unsafe_allow_html=True)
+        # Unified page header
+        config = get_page_config("material_management")
+        render_unified_header(
+            title_ja=config["title_ja"],
+            title_en=config["title_en"],
+            description=config["description"],
+            icon=config["icon"]
+        )
 
         # Navigation tabs
         tab1, tab2, tab3 = st.tabs([
@@ -108,95 +86,28 @@ class MaterialManagementUI:
             self._render_material_management()
 
     def _render_inventory_overview(self):
-        """Render enhanced inventory overview"""
+        """Render simplified inventory overview with unified metrics"""
         st.subheader("📊 " + self.ui_text['inventory_summary'])
 
+        # Use unified material metrics
+        render_material_metrics(self.manager.inventory)
+
+        # Material type breakdown
         summary = self.manager.get_inventory_summary()
-
-        # Enhanced metrics display
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.markdown("""
-            <div class="metric-card">
-                <h3 style="color: #1f77b4; margin: 0;">総材料数</h3>
-                <h2 style="margin: 0;">{}</h2>
-                <p style="margin: 0; color: #666;">Total Sheets</p>
-            </div>
-            """.format(summary['total_sheets']), unsafe_allow_html=True)
-
-        with col2:
-            st.markdown("""
-            <div class="metric-card">
-                <h3 style="color: #2ca02c; margin: 0;">材質種類</h3>
-                <h2 style="margin: 0;">{}</h2>
-                <p style="margin: 0; color: #666;">Material Types</p>
-            </div>
-            """.format(summary['material_types']), unsafe_allow_html=True)
-
-        with col3:
-            st.markdown("""
-            <div class="metric-card">
-                <h3 style="color: #ff7f0e; margin: 0;">総面積</h3>
-                <h2 style="margin: 0;">{:,.0f}</h2>
-                <p style="margin: 0; color: #666;">Total Area (mm²)</p>
-            </div>
-            """.format(summary['total_area']), unsafe_allow_html=True)
-
-        with col4:
-            st.markdown("""
-            <div class="metric-card">
-                <h3 style="color: #d62728; margin: 0;">総価値</h3>
-                <h2 style="margin: 0;">¥{:,.0f}</h2>
-                <p style="margin: 0; color: #666;">Total Value (JPY)</p>
-            </div>
-            """.format(summary['total_value']), unsafe_allow_html=True)
-
-        # Material type breakdown with enhanced visualization
         if summary['by_material_type']:
             st.subheader("📈 材質別内訳 / Breakdown by Material Type")
 
             breakdown_data = []
             for material_type, data in summary['by_material_type'].items():
                 breakdown_data.append({
-                    '材質 / Material Type': material_type,
-                    '数量 / Count': data['count'],
-                    '総面積 / Total Area (mm²)': f"{data['total_area']:,.0f}",
-                    '総価値 / Total Value (¥)': f"{data['total_value']:,.0f}",
-                    '平均面積 / Avg Area (mm²)': f"{data['total_area']/data['count']:,.0f}",
-                    '単価レンジ / Price Range (¥)': f"{data['total_value']/data['count']:,.0f}"
+                    '材質': material_type,
+                    '数量': data['count'],
+                    '総面積 (mm²)': f"{data['total_area']:,.0f}",
+                    '総価値 (¥)': f"{data['total_value']:,.0f}"
                 })
 
             df_breakdown = pd.DataFrame(breakdown_data)
             st.dataframe(df_breakdown, use_container_width=True)
-
-            # Enhanced visualization
-            import plotly.express as px
-            if len(breakdown_data) > 0:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    # Pie chart for material distribution
-                    fig_pie = px.pie(
-                        values=[data['count'] for data in summary['by_material_type'].values()],
-                        names=list(summary['by_material_type'].keys()),
-                        title="材質別分布 / Distribution by Material Type",
-                        color_discrete_sequence=px.colors.qualitative.Set3
-                    )
-                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                    st.plotly_chart(fig_pie, use_container_width=True)
-
-                with col2:
-                    # Bar chart for value distribution
-                    fig_bar = px.bar(
-                        x=list(summary['by_material_type'].keys()),
-                        y=[data['total_value'] for data in summary['by_material_type'].values()],
-                        title="材質別価値 / Value by Material Type",
-                        labels={'x': 'Material Type', 'y': 'Total Value (JPY)'},
-                        color_discrete_sequence=['#1f77b4']
-                    )
-                    fig_bar.update_layout(showlegend=False)
-                    st.plotly_chart(fig_bar, use_container_width=True)
 
     def _render_material_list(self):
         """Render enhanced material list with filtering"""

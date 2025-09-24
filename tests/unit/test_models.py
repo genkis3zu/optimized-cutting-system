@@ -334,12 +334,12 @@ class TestOptimizationConstraints:
         """Test creating valid constraints"""
         constraints = OptimizationConstraints(
             max_sheets=5,
-            kerf_width=3.5,
+            kerf_width=0.0,
             target_efficiency=0.8
         )
 
         assert constraints.max_sheets == 5
-        assert constraints.kerf_width == 3.5
+        assert constraints.kerf_width == 0.0
         assert constraints.target_efficiency == 0.8
         assert constraints.validate() is True
 

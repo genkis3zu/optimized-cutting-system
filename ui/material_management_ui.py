@@ -12,6 +12,7 @@ import json
 import os
 
 from core.material_manager import MaterialInventoryManager, MaterialSheet, get_material_manager
+from core.persistence_adapter import get_persistence_adapter
 
 
 class MaterialManagementUI:
@@ -21,6 +22,9 @@ class MaterialManagementUI:
     """
 
     def __init__(self):
+        # Use persistence adapter for database-first approach with JSON fallback
+        self.persistence = get_persistence_adapter()
+        # Keep legacy manager for compatibility during transition
         self.manager = get_material_manager()
 
         self.ui_text = {
@@ -42,6 +46,80 @@ class MaterialManagementUI:
             'cancel': 'キャンセル / Cancel',
             'confirm_delete': '削除確認 / Confirm Delete'
         }
+
+    def get_materials(self, material_type: Optional[str] = None) -> List[MaterialSheet]:
+        """Get materials using persistence adapter"""
+        return self.persistence.get_materials(material_type)
+
+    def get_inventory_summary(self) -> Dict:
+        """Get inventory summary using persistence adapter"""
+        materials = self.get_materials()
+
+        if not materials:
+            return {
+                'total_sheets': 0,
+                'material_types': 0,
+                'total_area': 0.0,
+                'total_value': 0.0,
+                'by_material_type': {}
+            }
+
+        # Calculate summary statistics
+        total_sheets = sum(m.availability for m in materials)
+        material_types = len(set(m.material_type for m in materials))
+        total_area = sum(m.area * m.availability for m in materials)
+        total_value = sum(m.cost_per_sheet * m.availability for m in materials)
+
+        # Group by material type
+        by_material_type = {}
+        for material in materials:
+            if material.material_type not in by_material_type:
+                by_material_type[material.material_type] = {
+                    'count': 0,
+                    'area': 0.0,
+                    'value': 0.0
+                }
+
+            by_material_type[material.material_type]['count'] += material.availability
+            by_material_type[material.material_type]['area'] += material.area * material.availability
+            by_material_type[material.material_type]['value'] += material.cost_per_sheet * material.availability
+
+        return {
+            'total_sheets': total_sheets,
+            'material_types': material_types,
+            'total_area': total_area,
+            'total_value': total_value,
+            'by_material_type': by_material_type
+        }
+
+    def get_all_material_types(self) -> List[str]:
+        """Get all unique material types"""
+        materials = self.get_materials()
+        return sorted(list(set(m.material_type for m in materials)))
+
+    def update_material(self, material_code: str, updates: Dict) -> bool:
+        """Update material using persistence adapter"""
+        # Get current material
+        materials = self.get_materials()
+        material = next((m for m in materials if m.material_code == material_code), None)
+        if not material:
+            return False
+
+        # Create updated material object
+        updated_material = MaterialSheet(
+            material_code=material_code,
+            material_type=updates.get('material_type', material.material_type),
+            thickness=updates.get('thickness', material.thickness),
+            width=updates.get('width', material.width),
+            height=updates.get('height', material.height),
+            area=updates.get('area', material.area),
+            cost_per_sheet=updates.get('cost_per_sheet', material.cost_per_sheet),
+            availability=updates.get('availability', material.availability),
+            supplier=updates.get('supplier', material.supplier)
+        )
+
+        # For now, fall back to manager until persistence adapter implements update
+        return self.manager.update_material_sheet(material_code, updates)
 
     def render(self):
         """Render material management interface"""
@@ -67,7 +145,7 @@ class MaterialManagementUI:
         """Render inventory overview"""
         st.subheader(self.ui_text['inventory_summary'])
 
-        summary = self.manager.get_inventory_summary()
+        summary = self.get_inventory_summary()
 
         # Key metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -89,8 +167,8 @@ class MaterialManagementUI:
                 breakdown_data.append({
                     '材質 / Material Type': material_type,
                     '数量 / Count': data['count'],
-                    '総面積 / Total Area (mm²)': f"{data['total_area']:,.0f}",
-                    '総価値 / Total Value (¥)': f"{data['total_value']:,.0f}"
+                    '総面積 / Total Area (mm²)': f"{data['area']:,.0f}",
+                    '総価値 / Total Value (¥)': f"{data['value']:,.0f}"
                 })
 
             df_breakdown = pd.DataFrame(breakdown_data)
@@ -110,7 +188,8 @@ class MaterialManagementUI:
         """Render material list with filtering"""
         st.subheader(self.ui_text['material_list'])
 
-        if not self.manager.inventory:
+        materials = self.get_materials()
+        if not materials:
             st.info("材料在庫がありません。手動で材料を追加してください。")
             st.info("No materials in inventory. Please add materials manually.")
             return
@@ -119,14 +198,14 @@ class MaterialManagementUI:
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            material_types = ['すべて / All'] + self.manager.get_all_material_types()
+            material_types = ['すべて / All'] + self.get_all_material_types()
             selected_type = st.selectbox(
                 "材質フィルタ / Material Type Filter",
                 material_types
             )
 
         with col2:
-            thicknesses = ['すべて / All'] + sorted(list(set(f"{s.thickness}mm" for s in self.manager.inventory)))
+            thicknesses = ['すべて / All'] + sorted(list(set(f"{s.thickness}mm" for s in materials)))
             selected_thickness = st.selectbox(
                 "板厚フィルタ / Thickness Filter",
                 thicknesses
@@ -136,7 +215,7 @@ class MaterialManagementUI:
             search_term = st.text_input("検索 / Search", placeholder="材料コードまたは材質名")
 
         # Filter materials
-        filtered_materials = self.manager.inventory.copy()
+        filtered_materials = materials.copy()
 
         if selected_type != 'すべて / All':
             filtered_materials = [m for m in filtered_materials if m.material_type == selected_type]
@@ -171,7 +250,7 @@ class MaterialManagementUI:
             df = pd.DataFrame(material_data)
             st.dataframe(df, use_container_width=True)
 
-            st.info(f"表示中: {len(filtered_materials)} / {len(self.manager.inventory)} 材料")
+            st.info(f"表示中: {len(filtered_materials)} / {len(materials)} 材料")
 
         else:
             st.warning("フィルタ条件に一致する材料がありません / No materials match the filter criteria")
@@ -213,7 +292,7 @@ class MaterialManagementUI:
                 )
 
                 # Suggest material types from existing inventory
-                existing_types = self.manager.get_all_material_types()
+                existing_types = self.get_all_material_types()
                 if existing_types:
                     material_type = st.selectbox(
                         self.ui_text['material_type'] + " *",
@@ -296,7 +375,7 @@ class MaterialManagementUI:
                         supplier=supplier
                     )
 
-                    if self.manager.add_material_sheet(new_material):
+                    if self.persistence.add_material(new_material):
                         st.success(f"材料 {material_code} を追加しました / Added material {material_code}")
                         st.rerun()
                     else:
@@ -308,19 +387,21 @@ class MaterialManagementUI:
         """Render edit material form"""
         st.write("### 材料編集 / Edit Material")
 
-        if not self.manager.inventory:
+        materials = self.get_materials()
+        if not materials:
             st.info("編集する材料がありません / No materials to edit")
             return
 
         # Select material to edit
-        material_codes = [m.material_code for m in self.manager.inventory]
+        material_codes = [m.material_code for m in materials]
         selected_code = st.selectbox(
             "編集する材料を選択 / Select Material to Edit",
             material_codes
         )
 
         if selected_code:
-            material = self.manager.get_material_sheet(selected_code)
+            # Find the selected material
+            material = next((m for m in materials if m.material_code == selected_code), None)
             if material:
                 with st.form("edit_material_form"):
                     col1, col2 = st.columns(2)
@@ -389,7 +470,7 @@ class MaterialManagementUI:
                             'supplier': new_supplier
                         }
 
-                        if self.manager.update_material_sheet(selected_code, updates):
+                        if self.update_material(selected_code, updates):
                             st.success(f"材料 {selected_code} を更新しました / Updated material {selected_code}")
                             st.rerun()
                         else:
@@ -399,19 +480,20 @@ class MaterialManagementUI:
         """Render delete material interface"""
         st.write("### 材料削除 / Delete Material")
 
-        if not self.manager.inventory:
+        materials = self.get_materials()
+        if not materials:
             st.info("削除する材料がありません / No materials to delete")
             return
 
         # Select material to delete
-        material_codes = [m.material_code for m in self.manager.inventory]
+        material_codes = [m.material_code for m in materials]
         selected_code = st.selectbox(
             "削除する材料を選択 / Select Material to Delete",
             material_codes
         )
 
         if selected_code:
-            material = self.manager.get_material_sheet(selected_code)
+            material = next((m for m in materials if m.material_code == selected_code), None)
             if material:
                 st.warning(f"""
                 **削除確認 / Confirm Deletion**
@@ -427,6 +509,7 @@ class MaterialManagementUI:
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("🗑️ 削除実行 / Delete", type="primary"):
+                        # For now, use manager until persistence adapter implements delete
                         if self.manager.remove_material_sheet(selected_code):
                             st.success(f"材料 {selected_code} を削除しました / Deleted material {selected_code}")
                             st.rerun()

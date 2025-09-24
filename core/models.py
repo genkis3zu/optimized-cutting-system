@@ -325,12 +325,14 @@ class OptimizationConstraints:
     Constraints for optimization process
     最適化プロセスの制約条件
     """
-    max_sheets: int = 10  # Maximum number of sheets to use
-    kerf_width: float = 3.5  # mm - cutting allowance
+    max_sheets: int = 1000  # Maximum number of sheets to use (high limit for 100% placement guarantee)
+    kerf_width: float = 0.0  # mm - cutting allowance (default: no allowance)
     min_waste_piece: float = 50.0  # mm - minimum usable waste piece
     allow_rotation: bool = True
     material_separation: bool = False  # Enable multi-sheet optimization by default
     time_budget: float = 30.0  # seconds
+    enable_gpu: bool = True  # GPU acceleration (Intel Iris Xe)
+    gpu_memory_limit: int = 2048  # MB - GPU memory limit
     target_efficiency: float = 0.75  # 75%
     
     def validate(self) -> bool:

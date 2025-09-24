@@ -146,7 +146,7 @@ def generate_work_instructions(results: List[PlacementResult]):
                     placed_panels=optimized_sequence,
                     sheet_specs=result.sheet,
                     constraints={
-                        'kerf_width': 3.5,
+                        'kerf_width': 0.0,
                         'material_type': result.material_block
                     }
                 )
@@ -335,10 +335,11 @@ def main():
 
         page = st.radio(
             "ページ選択 / Select Page",
-            ['optimization', 'material_management'],
+            ['optimization', 'material_management', 'data_management'],
             format_func=lambda x: {
                 'optimization': '🔧 最適化 / Optimization',
-                'material_management': '📦 材料管理 / Material Management'
+                'material_management': '📦 材料管理 / Material Management',
+                'data_management': '💾 データ管理 / Data Management'
             }[x]
         )
 
@@ -348,6 +349,8 @@ def main():
         render_optimization_page()
     elif page == 'material_management':
         render_material_management_page()
+    elif page == 'data_management':
+        render_data_management_page()
 
 
 def render_optimization_page():
@@ -359,11 +362,16 @@ def render_optimization_page():
         st.header("入力設定 / Input Settings")
         
         # Panel input component with material validation
+        from core.persistence_adapter import get_persistence_adapter
         from core.material_manager import get_material_manager
-        material_manager = get_material_manager()
+
+        # Use persistence adapter for database-first approach
+        persistence = get_persistence_adapter()
+        material_manager = get_material_manager()  # Fallback for compatibility
 
         # Auto-load sample data if empty
-        if len(material_manager.inventory) == 0:
+        materials = persistence.get_materials()
+        if len(materials) == 0:
             st.info("材料在庫が空です。サンプルデータを読み込み中...")
             sample_file = "sample_data/sizaidata.txt"
             if os.path.exists(sample_file):
@@ -439,6 +447,47 @@ def render_optimization_page():
 
             # Store results in session state for export
             st.session_state.optimization_results = results
+
+            # Save optimization result to database
+            try:
+                from core.persistence_adapter import get_persistence_adapter
+                persistence = get_persistence_adapter()
+
+                # Calculate metrics
+                total_panels = sum(panel.quantity for panel in panels)
+                placed_panels = sum(len(result.panels) for result in results)
+                placement_rate = (placed_panels / total_panels) * 100 if total_panels > 0 else 0
+                avg_efficiency = sum(result.efficiency for result in results) / len(results) if results else 0
+
+                metrics = {
+                    'total_panels': total_panels,
+                    'placed_panels': placed_panels,
+                    'placement_rate': placement_rate,
+                    'efficiency': avg_efficiency,
+                    'sheets_used': len(results)
+                }
+
+                # Save to database
+                optimization_id = persistence.save_optimization_result(
+                    panels=panels,
+                    constraints=constraints,
+                    results=[{
+                        'id': i,
+                        'efficiency': result.efficiency,
+                        'panels_count': len(result.panels),
+                        'material_block': result.material_block
+                    } for i, result in enumerate(results)],
+                    algorithm_used=algorithm.name,
+                    processing_time=getattr(results[0], 'processing_time', 0.0) if results else 0.0,
+                    metrics=metrics
+                )
+
+                if optimization_id:
+                    st.success(f"✅ 最適化結果をデータベースに保存しました (ID: {optimization_id})")
+
+            except Exception as e:
+                st.warning(f"⚠️ データベース保存でエラーが発生しました: {e}")
+                # Continue without failing the optimization
         else:
             st.error("最適化に失敗しました / Optimization failed")
 
@@ -465,9 +514,14 @@ def render_optimization_page():
         - sizaidata.txt (材料在庫データ)
         """)
 
-        if st.button("📦 材料管理ページへ / Go to Material Management"):
-            st.session_state.page_redirect = 'material_management'
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📦 材料管理ページへ / Go to Material Management"):
+                st.session_state.page_redirect = 'material_management'
+        with col2:
+            if st.button("💾 データ管理ページへ / Go to Data Management"):
+                st.session_state.page_redirect = 'data_management'
+                st.rerun()
 
     else:
         st.info("パネルを入力して最適化を実行してください / Please input panels and run optimization")
@@ -477,6 +531,39 @@ def render_material_management_page():
     """Render material management page"""
     from ui.material_management_ui import render_material_management
     render_material_management()
+
+
+def render_cutting_optimization():
+    """Render cutting optimization page"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cutting_opt", "pages/1_🔧_Cutting_Optimization.py")
+    cutting_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cutting_module)
+    cutting_module.main()
+
+def render_analysis_results():
+    """Render analysis results page"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("analysis", "pages/4_📊_Analysis_Results.py")
+    analysis_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(analysis_module)
+    analysis_module.main()
+
+def render_pi_management():
+    """Render PI management page"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pi_mgmt", "pages/3_⚙️_PI_Management.py")
+    pi_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pi_module)
+    pi_module.main()
+
+def render_data_management_page():
+    """Render data management page"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("data_management", "pages/3_💾_Data_Management.py")
+    data_management_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(data_management_module)
+    data_management_module.render_data_management_page()
 
 
 # Import os for file operations

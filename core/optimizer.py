@@ -514,7 +514,9 @@ class OptimizationEngine:
                     sheet_count = 0
                     max_sheets = constraints.max_sheets
 
-                    while remaining_panels and sheet_count < max_sheets:
+                    # 100% placement guarantee: Continue until all panels are placed
+                    # 100%配置保証: 全パネルが配置されるまで継続
+                    while remaining_panels and sheet_count < 1000:  # Safety limit to prevent infinite loop
                         sheet_count += 1
 
                         # Optimize current sheet
@@ -577,8 +579,36 @@ class OptimizationEngine:
                                 f"efficiency {result.efficiency:.1%}, {len(remaining_panels)} panel types remaining"
                             )
                         else:
-                            self.logger.warning(f"Sheet {sheet_count} optimization failed, stopping")
-                            break
+                            # Force placement of at least one panel to ensure progress
+                            # 進捗を保証するため最低1つのパネルを強制配置
+                            if remaining_panels:
+                                self.logger.warning(f"Sheet {sheet_count} failed, attempting force placement")
+
+                                # Try to place the smallest panel
+                                smallest_panel = min(remaining_panels, key=lambda p: p.area)
+                                force_result = self._force_single_panel_placement(smallest_panel, best_sheet, algorithm, sheet_constraints)
+
+                                if force_result:
+                                    force_result.sheet_id = sheet_count
+                                    force_result.material_block = best_material
+                                    results.append(force_result)
+
+                                    # Update remaining panels
+                                    for panel in remaining_panels:
+                                        if panel.id == smallest_panel.id:
+                                            if panel.quantity > 1:
+                                                panel.quantity -= 1
+                                                break
+                                            else:
+                                                remaining_panels.remove(panel)
+                                                break
+
+                                    self.logger.info(f"Force placement successful: 1 panel on sheet {sheet_count}")
+                                else:
+                                    self.logger.error("Force placement failed, stopping optimization")
+                                    break
+                            else:
+                                break
 
                     # Log final results
                     total_placed = sum(len(r.panels) for r in results)
@@ -604,6 +634,37 @@ class OptimizationEngine:
             self.performance_monitor.stop_monitoring()
             
             self.logger.info(f"Optimization completed in {processing_time:.2f} seconds")
+
+    def _force_single_panel_placement(
+        self,
+        panel: Panel,
+        sheet: SteelSheet,
+        algorithm: OptimizationAlgorithm,
+        constraints: OptimizationConstraints
+    ) -> Optional[PlacementResult]:
+        """
+        Force placement of a single panel on a new sheet
+        単一パネルの新シートへの強制配置
+        """
+        try:
+            single_panel = Panel(
+                id=f"{panel.id}_force",
+                width=panel.width,
+                height=panel.height,
+                quantity=1,
+                material=panel.material,
+                thickness=panel.thickness,
+                allow_rotation=panel.allow_rotation
+            )
+
+            result = algorithm.optimize([single_panel], sheet, constraints)
+            if result and len(result.panels) > 0:
+                return result
+
+        except Exception as e:
+            self.logger.error(f"Force placement error: {e}")
+
+        return None
     
     def _optimize_with_timeout(
         self,

@@ -99,7 +99,7 @@ class AdvancedGuillotineBinPacker:
     BFD用の高度なギロチン二分木ビンパッキングアルゴリズム
     """
 
-    def __init__(self, sheet_width: float, sheet_height: float, kerf_width: float = 3.5):
+    def __init__(self, sheet_width: float, sheet_height: float, kerf_width: float = 0.0):
         self.sheet_width = sheet_width
         self.sheet_height = sheet_height
         self.kerf_width = kerf_width

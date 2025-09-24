@@ -374,7 +374,7 @@ class TestFFDIntegration:
 
         sheet = SteelSheet()  # Standard 1500x3100
         constraints = OptimizationConstraints(
-            kerf_width=3.5,
+            kerf_width=0.0,
             target_efficiency=0.75
         )
 

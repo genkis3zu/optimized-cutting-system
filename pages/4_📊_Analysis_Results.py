@@ -12,13 +12,25 @@ from typing import List, Optional
 import plotly.express as px
 
 from core.models import PlacementResult
+from ui.page_headers import render_unified_header, get_page_config
+from ui.common_styles import get_common_css
+from ui.metric_cards import render_optimization_metrics, render_status_card
 
 
 def main():
     """Main analysis results page"""
 
-    st.title("📊 分析結果 / Analysis Results")
-    st.markdown("最適化結果の詳細分析とレポート / Detailed analysis and reports of optimization results")
+    # Apply unified styling
+    st.markdown(get_common_css(), unsafe_allow_html=True)
+
+    # Unified page header
+    config = get_page_config("analysis_results")
+    render_unified_header(
+        title_ja=config["title_ja"],
+        title_en=config["title_en"],
+        description=config["description"],
+        icon=config["icon"]
+    )
 
     # Check if optimization results exist in session state
     if 'optimization_results' not in st.session_state or not st.session_state.optimization_results:
@@ -45,45 +57,17 @@ def main():
 
 
 def render_analysis_overview(results: List[PlacementResult]):
-    """Render analysis overview summary"""
+    """Render analysis overview summary with unified metrics"""
     st.subheader("📈 分析概要 / Analysis Overview")
 
     # Calculate overall statistics
     total_sheets = len(results)
     total_panels = sum(len(result.panels) for result in results)
     total_cost = sum(result.cost for result in results)
-    avg_efficiency = sum(result.efficiency for result in results) / len(results) * 100 if results else 0
-    total_waste = sum(result.waste_area for result in results)
+    avg_efficiency = sum(result.efficiency for result in results) / len(results) if results else 0
 
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            label="使用シート数 / Sheets Used",
-            value=f"{total_sheets:,}",
-            delta=None
-        )
-
-    with col2:
-        st.metric(
-            label="配置パネル数 / Panels Placed",
-            value=f"{total_panels:,}",
-            delta=None
-        )
-
-    with col3:
-        st.metric(
-            label="総コスト / Total Cost",
-            value=f"¥{total_cost:,.0f}",
-            delta=None
-        )
-
-    with col4:
-        st.metric(
-            label="平均効率 / Average Efficiency",
-            value=f"{avg_efficiency:.1f}%",
-            delta=None
-        )
+    # Use unified optimization metrics
+    render_optimization_metrics(total_sheets, total_panels, avg_efficiency, total_cost)
 
     # Additional details
     with st.expander("📋 詳細統計 / Detailed Statistics", expanded=False):

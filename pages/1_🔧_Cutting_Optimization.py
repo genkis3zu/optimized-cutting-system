@@ -18,6 +18,8 @@ from core.optimizer import create_optimization_engine
 from core.algorithms.ffd import create_ffd_algorithm
 from ui.components import PanelInputComponent, OptimizationSettingsComponent
 from core.material_manager import get_material_manager
+from ui.page_headers import render_unified_header, get_page_config
+from ui.common_styles import get_common_css
 
 
 def setup_page():
@@ -28,79 +30,19 @@ def setup_page():
         layout="wide"
     )
 
-    # Enhanced CSS for optimization page
-    st.markdown("""
-    <style>
-    .main-header {
-        background: linear-gradient(90deg, #ff7f0e, #d62728);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .optimization-card {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 5px solid #ff7f0e;
-        margin-bottom: 1.5rem;
-    }
-    .panel-input-section {
-        background: #ffffff;
-        padding: 2rem;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        margin-bottom: 2rem;
-    }
-    .results-section {
-        background: #f0f8ff;
-        padding: 2rem;
-        border-radius: 10px;
-        border: 1px solid #87ceeb;
-    }
-    .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin: 1rem 0;
-    }
-    .metric-item {
-        background: white;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #1f77b4;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .success-message {
-        background: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    .warning-message {
-        background: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Apply unified styling
+    st.markdown(get_common_css(), unsafe_allow_html=True)
 
 
 def render_page_header():
-    """Render enhanced page header"""
-    st.markdown("""
-    <div class="main-header">
-        <h1>🔧 鋼板切断最適化システム</h1>
-        <h3>Steel Cutting Optimization System</h3>
-        <p>ギロチンカット制約下での2Dビンパッキング最適化 | 2D bin packing optimization with guillotine constraints</p>
-    </div>
-    """, unsafe_allow_html=True)
+    """Render unified page header"""
+    config = get_page_config("cutting_optimization")
+    render_unified_header(
+        title_ja=config["title_ja"],
+        title_en=config["title_en"],
+        description=config["description"],
+        icon=config["icon"]
+    )
 
 
 def render_panel_input_section():
@@ -490,7 +432,7 @@ def generate_work_instructions(results: List[PlacementResult]):
                     placed_panels=optimized_sequence,
                     sheet_specs=result.sheet,
                     constraints={
-                        'kerf_width': 3.5,
+                        'kerf_width': 0.0,
                         'material_type': result.material_block
                     }
                 )
@@ -610,37 +552,19 @@ def save_optimization_results(results: List[PlacementResult]):
 
 
 def render_sidebar_help():
-    """Render usage help in sidebar"""
+    """Render simplified usage help in sidebar"""
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 🚀 使用方法 / How to Use")
+        st.markdown("### 📖 クイックガイド")
+        st.markdown("""
+        **基本手順:**
+        1. パネルデータ入力
+        2. 最適化実行
+        3. 結果確認
 
-        with st.expander("📋 基本的な流れ / Basic Flow", expanded=False):
-            st.markdown("""
-            1. **パネル入力** - ファイルアップロードまたはテキストデータでパネル情報を入力
-            2. **材料検証** - 入力されたパネルが材料在庫と照合されます
-            3. **最適化実行** - アルゴリズムを選択して実行
-            4. **結果確認** - 切断レイアウト、効率、コストを確認
-            """)
-
-        with st.expander("📁 ファイル形式 / File Formats", expanded=False):
-            st.markdown("""
-            **対応形式 / Supported Formats:**
-            - TSV形式 (data0923.txt形式)
-            - CSV形式
-            - JSON形式
-
-            **必須項目 / Required Fields:**
-            - 製造番号, PI, W, H, 数量, 材質, 板厚
-            """)
-
-        with st.expander("💡 最適化のヒント / Optimization Tips", expanded=False):
-            st.markdown("""
-            - パネルの回転を許可すると効率が向上します
-            - 材質別分離により品質が向上します
-            - 薄板切断では切断代を0に設定済み
-            - PIコードによる寸法展開が自動実行されます
-            """)
+        **対応形式:** TSV, CSV, JSON
+        **ヒント:** 回転許可で効率向上
+        """)
 
         with st.expander("⚙️ 技術情報 / Technical Info", expanded=False):
             st.markdown("""

@@ -499,13 +499,32 @@ class OptimizationSettingsComponent:
                 help="材質ごとに分けて最適化 / Optimize separately by material",
                 key="opt_material_separation"
             )
+
+            # 100% placement guarantee setting
+            placement_guarantee = st.checkbox(
+                "100%配置保証 / 100% Placement Guarantee",
+                value=True,
+                help="全パネルを必ず配置 (シート数増加) / Place all panels (may increase sheet count)",
+                key="opt_placement_guarantee"
+            )
+
+            # GPU acceleration setting
+            gpu_acceleration = st.checkbox(
+                "GPU加速 / GPU Acceleration",
+                value=True,
+                help="Intel Iris Xe グラフィックスによる高速化 / Accelerate with Intel Iris Xe Graphics",
+                key="opt_gpu_acceleration"
+            )
         
         constraints = OptimizationConstraints(
+            max_sheets=1000 if placement_guarantee else 20,  # 100% placement guarantee vs efficiency focus
             kerf_width=kerf_width,
             allow_rotation=allow_rotation,
             material_separation=material_separation,
             time_budget=time_budget,
-            target_efficiency=target_efficiency / 100.0
+            target_efficiency=target_efficiency / 100.0,
+            enable_gpu=gpu_acceleration,
+            gpu_memory_limit=2048
         )
         
         return algorithm, constraints

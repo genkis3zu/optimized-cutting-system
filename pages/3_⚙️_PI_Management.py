@@ -11,6 +11,7 @@ import pandas as pd
 from typing import Dict, List, Optional
 
 from core.pi_manager import get_pi_manager, PICode
+from core.persistence_adapter import get_persistence_adapter
 
 
 def setup_page_config():
@@ -95,7 +96,9 @@ def render_page_header():
 
 def render_pi_summary():
     """PIコード概要を表示"""
-    pi_manager = get_pi_manager()
+    # Use persistence adapter for database-first approach
+    persistence = get_persistence_adapter()
+    pi_manager = get_pi_manager()  # Fallback for summary functionality
     summary = pi_manager.get_pi_summary()
 
     st.markdown('<div class="pi-card">', unsafe_allow_html=True)
@@ -144,7 +147,9 @@ def render_pi_summary():
 
 def render_dimension_calculator():
     """展開寸法計算機を表示"""
-    pi_manager = get_pi_manager()
+    # Use persistence adapter for database-first approach
+    persistence = get_persistence_adapter()
+    pi_manager = get_pi_manager()  # Fallback for calculation functionality
 
     st.markdown('<div class="pi-card">', unsafe_allow_html=True)
     st.subheader("🧮 展開寸法計算 / Dimension Calculator")
@@ -189,7 +194,11 @@ def render_dimension_calculator():
         st.write("#### 計算結果 / Calculation Result")
 
         if selected_pi:
-            pi_info = pi_manager.get_pi_code(selected_pi)
+            # Try persistence adapter first, fallback to manager
+            pi_info = persistence.get_pi_code(selected_pi)
+            if not pi_info:
+                pi_info = pi_manager.get_pi_code(selected_pi)
+
             expanded_w, expanded_h = pi_manager.get_expansion_for_panel(
                 selected_pi, finished_w, finished_h
             )
@@ -237,7 +246,9 @@ def render_dimension_calculator():
 
 def render_pi_management():
     """PIコード管理セクションを表示"""
-    pi_manager = get_pi_manager()
+    # Use persistence adapter for database-first approach
+    persistence = get_persistence_adapter()
+    pi_manager = get_pi_manager()  # Fallback for compatibility
 
     st.markdown('<div class="pi-card">', unsafe_allow_html=True)
     st.subheader("⚙️ PIコード管理 / PI Code Management")
@@ -251,21 +262,21 @@ def render_pi_management():
     ])
 
     with tab1:
-        render_pi_list(pi_manager)
+        render_pi_list(persistence, pi_manager)
 
     with tab2:
-        render_add_pi_form(pi_manager)
+        render_add_pi_form(persistence, pi_manager)
 
     with tab3:
-        render_edit_pi_form(pi_manager)
+        render_edit_pi_form(persistence, pi_manager)
 
     with tab4:
-        render_delete_pi_form(pi_manager)
+        render_delete_pi_form(persistence, pi_manager)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def render_pi_list(pi_manager):
+def render_pi_list(persistence, pi_manager):
     """PIコード一覧を表示"""
     st.write("### 📋 PIコード一覧 / PI Code List")
 
@@ -308,7 +319,7 @@ def render_pi_list(pi_manager):
     )
 
 
-def render_add_pi_form(pi_manager):
+def render_add_pi_form(persistence, pi_manager):
     """PIコード追加フォーム"""
     st.write("### ➕ 新規PIコード追加 / Add New PI Code")
 
@@ -449,7 +460,7 @@ def render_add_pi_form(pi_manager):
                     description=description
                 )
 
-                if pi_manager.add_pi_code(new_pi):
+                if persistence.add_pi_code(new_pi):
                     st.markdown(f"""
                     <div class="success-message">
                         ✅ <strong>成功！</strong> PIコード {pi_code} を追加しました<br>
@@ -463,7 +474,7 @@ def render_add_pi_form(pi_manager):
                 st.error("⚠️ PIコードは必須です / PI code is required")
 
 
-def render_edit_pi_form(pi_manager):
+def render_edit_pi_form(persistence, pi_manager):
     """PIコード編集フォーム"""
     st.write("### ✏️ PIコード編集 / Edit PI Code")
 
@@ -480,7 +491,10 @@ def render_edit_pi_form(pi_manager):
     )
 
     if selected_code:
-        pi_info = pi_manager.get_pi_code(selected_code)
+        # Try persistence adapter first, fallback to manager
+        pi_info = persistence.get_pi_code(selected_code)
+        if not pi_info:
+            pi_info = pi_manager.get_pi_code(selected_code)
         if pi_info:
             # 現在の情報表示
             with st.expander("📋 現在のPIコード情報 / Current PI Code Info", expanded=True):
@@ -560,6 +574,7 @@ def render_edit_pi_form(pi_manager):
                         'description': new_description
                     }
 
+                    # For now, use manager until persistence adapter implements update
                     if pi_manager.update_pi_code(selected_code, updates):
                         st.success(f"✅ PIコード {selected_code} を更新しました / Updated PI code {selected_code}")
                         st.rerun()
@@ -567,7 +582,7 @@ def render_edit_pi_form(pi_manager):
                         st.error("❌ 更新に失敗しました / Failed to update")
 
 
-def render_delete_pi_form(pi_manager):
+def render_delete_pi_form(persistence, pi_manager):
     """PIコード削除フォーム"""
     st.write("### 🗑️ PIコード削除 / Delete PI Code")
 
@@ -584,7 +599,10 @@ def render_delete_pi_form(pi_manager):
     )
 
     if selected_code:
-        pi_info = pi_manager.get_pi_code(selected_code)
+        # Try persistence adapter first, fallback to manager
+        pi_info = persistence.get_pi_code(selected_code)
+        if not pi_info:
+            pi_info = pi_manager.get_pi_code(selected_code)
         if pi_info:
             # 削除確認表示
             st.markdown(f"""
@@ -610,6 +628,7 @@ def render_delete_pi_form(pi_manager):
                     type="primary",
                     use_container_width=True
                 ):
+                    # For now, use manager until persistence adapter implements delete
                     if pi_manager.remove_pi_code(selected_code):
                         st.success(f"✅ PIコード {selected_code} を削除しました / Deleted PI code {selected_code}")
                         st.rerun()
