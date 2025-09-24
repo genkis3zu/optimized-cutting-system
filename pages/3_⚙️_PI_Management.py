@@ -353,11 +353,11 @@ def render_add_pi_form(persistence, pi_manager):
 
             thickness = st.number_input(
                 "板厚 (mm) *",
-                min_value=0.1,
+                min_value=0.0,
                 max_value=10.0,
                 value=0.5,
                 step=0.1,
-                help="材料の板厚"
+                help="材料の板厚（0.0も指定可能）"
             )
 
         with col2:
@@ -534,9 +534,9 @@ def render_edit_pi_form(persistence, pi_manager):
 
                     new_thickness = st.number_input(
                         "板厚 (mm)",
-                        min_value=0.1,
+                        min_value=0.0,
                         max_value=10.0,
-                        value=pi_info.thickness,
+                        value=max(0.0, pi_info.thickness),  # 0.0未満の場合は0.0に設定
                         step=0.1
                     )
 

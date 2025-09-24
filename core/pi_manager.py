@@ -60,15 +60,70 @@ class PICode:
 class PIManager:
     """PIコード管理クラス"""
 
-    def __init__(self, data_file: str = "data/pi_codes.json"):
-        self.data_file = data_file
+    def __init__(self, use_database: bool = True):
+        """
+        Initialize PI Manager
+        Args:
+            use_database: If True, use SQLite database; if False, use JSON file (legacy)
+        """
+        self.use_database = use_database
         self.pi_codes: List[PICode] = []
-        self._ensure_directory()
-        self.load_pi_codes()
+        if use_database:
+            self.load_pi_codes_from_database()
+        else:
+            # Legacy JSON file support
+            self.data_file = "data/pi_codes.json"
+            self._ensure_directory()
+            self.load_pi_codes()
+
+    def load_pi_codes_from_database(self) -> bool:
+        """SQLiteデータベースからPIコードを読み込み"""
+        try:
+            from core.persistence_adapter import get_persistence_adapter
+            persistence = get_persistence_adapter()
+
+            # Get all PI codes from database
+            import sqlite3
+            conn = sqlite3.connect('data/cutting_system.db')
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT pi_code, width_expansion, height_expansion, has_backing,
+                       backing_material, backing_thickness, notes
+                FROM pi_codes
+            ''')
+
+            rows = cursor.fetchall()
+            self.pi_codes = []
+
+            for row in rows:
+                # Convert database format to PICode object
+                pi_code_obj = PICode(
+                    pi_code=row[0],
+                    w_expansion=row[1] or 0.0,
+                    h_expansion=row[2] or 0.0,
+                    has_backing=bool(row[3]) if row[3] is not None else False,
+                    backing_material=row[4] or "",
+                    thickness=row[5] or 0.5,
+                    description=row[6] or ""
+                )
+                self.pi_codes.append(pi_code_obj)
+
+            conn.close()
+            print(f"データベースから{len(self.pi_codes)}個のPIコードを読み込みました")
+            return True
+
+        except Exception as e:
+            print(f"データベースからのPIコード読み込みエラー: {e}")
+            # Fallback to JSON if database fails
+            self.data_file = "data/pi_codes.json"
+            self._ensure_directory()
+            return self.load_pi_codes()
 
     def _ensure_directory(self):
         """データディレクトリの作成"""
-        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+        if hasattr(self, 'data_file'):
+            os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
 
     def load_pi_codes(self) -> bool:
         """PIコードデータをファイルから読み込み"""

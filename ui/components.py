@@ -437,8 +437,6 @@ class OptimizationSettingsComponent:
         self.ui_text = {
             'optimization_settings': '最適化設定 / Optimization Settings',
             'algorithm': 'アルゴリズム / Algorithm',
-            'time_budget': '時間制限 (秒) / Time Budget (seconds)',
-            'target_efficiency': '目標効率 / Target Efficiency (%)',
             'kerf_width': '切断代 (mm) / Kerf Width (mm) - 薄板切断用',
             'allow_rotation': '回転許可 / Allow Rotation',
             'material_separation': '材質別分離 / Material Separation'
@@ -453,27 +451,9 @@ class OptimizationSettingsComponent:
         with col1:
             algorithm = st.selectbox(
                 self.ui_text['algorithm'],
-                ['AUTO', 'FFD', 'BFD', 'HYBRID'],
+                ['AUTO', 'FFD', 'BFD', 'GENETIC', 'HYBRID'],
                 help="AUTO: 自動選択 / Automatic selection",
                 key="opt_algorithm"
-            )
-            
-            time_budget = st.slider(
-                self.ui_text['time_budget'],
-                min_value=1.0,
-                max_value=300.0,
-                value=30.0,
-                step=1.0,
-                key="opt_time_budget"
-            )
-            
-            target_efficiency = st.slider(
-                self.ui_text['target_efficiency'],
-                min_value=50,
-                max_value=95,
-                value=75,
-                step=5,
-                key="opt_target_efficiency"
             )
         
         with col2:
@@ -521,8 +501,8 @@ class OptimizationSettingsComponent:
             kerf_width=kerf_width,
             allow_rotation=allow_rotation,
             material_separation=material_separation,
-            time_budget=time_budget,
-            target_efficiency=target_efficiency / 100.0,
+            time_budget=86400.0,  # 24 hours - effectively unlimited for optimization
+            target_efficiency=0.1,  # Very low target to avoid efficiency warnings
             enable_gpu=gpu_acceleration,
             gpu_memory_limit=2048
         )

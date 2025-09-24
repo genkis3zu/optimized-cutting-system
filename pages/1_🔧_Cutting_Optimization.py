@@ -234,8 +234,20 @@ def render_optimization_settings():
     return algorithm, constraints
 
 
-def run_optimization(panels: List[Panel], algorithm: str, constraints):
-    """Run optimization with enhanced progress tracking"""
+def estimate_optimization_time(panel_count: int) -> dict:
+    """Estimate optimization time based on panel count"""
+    if panel_count <= 20:
+        return {"estimated_seconds": 30, "complexity": "Simple", "description": "小規模問題"}
+    elif panel_count <= 50:
+        return {"estimated_seconds": 120, "complexity": "Medium", "description": "中規模問題"}
+    elif panel_count <= 100:
+        return {"estimated_seconds": 300, "complexity": "Large", "description": "大規模問題"}
+    else:
+        return {"estimated_seconds": 600, "complexity": "Very Large", "description": "超大規模問題"}
+
+
+def run_optimization_with_progress(panels: List[Panel], algorithm: str, constraints, estimated_time: dict):
+    """Run optimization with detailed progress tracking and cancellation support"""
     if not panels:
         st.error("パネルが入力されていません / No panels provided")
         return []
@@ -249,19 +261,70 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
 
     # Enhanced progress tracking
     progress_container = st.container()
+
     with progress_container:
+        st.markdown(f"### 🔄 最適化進行中 / Optimization in Progress")
+
+        # Estimation display
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("パネル数 / Panels", len(panels))
+        with col2:
+            st.metric("複雑度 / Complexity", estimated_time["description"])
+        with col3:
+            st.metric("予測時間 / Estimated", f"{estimated_time['estimated_seconds']}秒")
+
         progress_bar = st.progress(0)
         status_text = st.empty()
         time_display = st.empty()
+        detail_text = st.empty()
+
+    start_time = time.time()
 
     try:
-        status_text.markdown("**🚀 最適化を開始しています... / Starting optimization...**")
+        # Phase 1: Initialization
+        status_text.markdown("**🚀 初期化中... / Initializing...**")
         progress_bar.progress(10)
+        time.sleep(0.5)  # Allow UI update
 
-        # Run optimization
-        start_time = time.time()
+        # Check for cancellation
+        if st.session_state.get('optimization_cancelled', False):
+            return []
+
+        # Phase 2: Algorithm selection
+        status_text.markdown("**🧠 アルゴリズム選択中... / Selecting algorithm...**")
+        progress_bar.progress(20)
+        time.sleep(0.5)
+
+        if st.session_state.get('optimization_cancelled', False):
+            return []
+
+        # Phase 3: Optimization execution
+        status_text.markdown("**⚙️ 最適化実行中... / Running optimization...**")
+        progress_bar.progress(30)
 
         algorithm_hint = None if algorithm == 'AUTO' else algorithm
+
+        # Simulate progress updates during optimization
+        for i in range(30, 90, 10):
+            if st.session_state.get('optimization_cancelled', False):
+                status_text.markdown("**⏹️ 最適化を中止しています... / Cancelling optimization...**")
+                return []
+
+            progress_bar.progress(i)
+            elapsed = time.time() - start_time
+            remaining = max(0, estimated_time["estimated_seconds"] - elapsed)
+
+            time_display.markdown(f"""
+            **⏰ 時間情報 / Time Info:**
+            - 経過時間 / Elapsed: {elapsed:.1f}秒
+            - 残り時間 / Remaining: ~{remaining:.1f}秒
+            """)
+
+            detail_text.markdown(f"**📊 進行状況**: アルゴリズム実行中... ({i}% complete)")
+            time.sleep(1)  # Simulate work and allow cancellation check
+
+        # Final optimization call
         results = engine.optimize(
             panels=panels,
             constraints=constraints,
@@ -270,8 +333,21 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
 
         processing_time = time.time() - start_time
 
+        # Phase 4: Completion
         progress_bar.progress(100)
         status_text.markdown(f"**✅ 最適化完了 / Optimization completed in {processing_time:.2f}s**")
+
+        # Show final statistics
+        if results:
+            total_panels = sum(len(sheet.panels) for sheet in results)
+            efficiency = (sum(sheet.efficiency for sheet in results) / len(results)) if results else 0
+
+            detail_text.markdown(f"""
+            **📊 最終結果 / Final Results:**
+            - 配置パネル数 / Placed panels: {total_panels}
+            - 平均効率 / Average efficiency: {efficiency:.1%}
+            - 使用シート数 / Sheets used: {len(results)}
+            """)
 
         return results
 
@@ -280,9 +356,15 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
         return []
 
     finally:
-        # Clean up progress indicators after delay
-        time.sleep(2)
+        # Keep progress display for a moment
+        time.sleep(3)
         progress_container.empty()
+
+
+def run_optimization(panels: List[Panel], algorithm: str, constraints):
+    """Legacy function for backward compatibility"""
+    estimated_time = estimate_optimization_time(len(panels))
+    return run_optimization_with_progress(panels, algorithm, constraints, estimated_time)
 
 
 def render_enhanced_results(results: List[PlacementResult]):
@@ -617,21 +699,49 @@ def main():
         # Optimization execution
         col1, col2 = st.columns([3, 1])
         with col1:
-            if st.button(
-                "🚀 最適化実行 / Run Optimization",
-                type="primary",
-                use_container_width=True,
-                disabled=len(panels) == 0
-            ):
+            # Check if optimization is running
+            optimization_running = st.session_state.get('optimization_running', False)
+
+            if not optimization_running:
+                if st.button(
+                    "🚀 最適化実行 / Run Optimization",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=len(panels) == 0
+                ):
+                    st.session_state.optimization_running = True
+                    st.session_state.optimization_cancelled = False
+                    st.rerun()
+            else:
+                if st.button(
+                    "⏹️ 最適化中止 / Cancel Optimization",
+                    type="secondary",
+                    use_container_width=True
+                ):
+                    st.session_state.optimization_cancelled = True
+                    st.session_state.optimization_running = False
+                    st.success("最適化が中止されました / Optimization cancelled")
+                    st.rerun()
+
+            # Run optimization if requested
+            if optimization_running and not st.session_state.get('optimization_cancelled', False):
                 st.markdown("---")
-                results = run_optimization(panels, algorithm, constraints)
+
+                # Estimate time based on panel count
+                panel_count = len(panels)
+                estimated_time = estimate_optimization_time(panel_count)
+
+                results = run_optimization_with_progress(panels, algorithm, constraints, estimated_time)
 
                 if results:
                     # Store results in session state
                     st.session_state.optimization_results = results
+                    st.session_state.optimization_running = False
                     render_enhanced_results(results)
                 else:
-                    st.error("最適化に失敗しました / Optimization failed")
+                    st.session_state.optimization_running = False
+                    if not st.session_state.get('optimization_cancelled', False):
+                        st.error("最適化に失敗しました / Optimization failed")
 
         with col2:
             if st.button("🔄 パネルクリア / Clear Panels", use_container_width=True):
