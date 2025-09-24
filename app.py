@@ -7,6 +7,8 @@ with guillotine cut constraints.
 """
 
 import streamlit as st
+from ui.common_styles import get_common_css
+from ui.page_headers import render_unified_header, get_page_config
 
 # Configure page
 st.set_page_config(
@@ -17,11 +19,7 @@ st.set_page_config(
 )
 
 # Apply unified styling
-from ui.common_styles import get_common_css
 st.markdown(get_common_css(), unsafe_allow_html=True)
-
-# Render main page header
-from ui.page_headers import render_unified_header, get_page_config
 
 config = get_page_config("cutting_optimization")
 render_unified_header(

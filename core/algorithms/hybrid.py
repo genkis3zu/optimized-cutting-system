@@ -181,6 +181,8 @@ class HybridOptimizer(OptimizationAlgorithm):
             processed.append(panel)
 
         # Advanced sorting: consider multiple factors
+
+
         def advanced_sort_key(p):
             return (
                 -p.priority,           # Higher priority first
@@ -329,6 +331,8 @@ class HybridOptimizer(OptimizationAlgorithm):
 
 
 # Factory function
+
+
 def create_hybrid_algorithm() -> HybridOptimizer:
     """Create Hybrid algorithm instance"""
     return HybridOptimizer()

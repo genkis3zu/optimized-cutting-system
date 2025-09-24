@@ -15,7 +15,7 @@ BACKGROUND_COLOR = "#f8f9fa"   # 背景グレー
 
 def get_common_css():
     """共通CSSスタイルを返す"""
-    return f"""
+    return """
     <style>
     /* 共通ヘッダースタイル */
     .unified-header {{

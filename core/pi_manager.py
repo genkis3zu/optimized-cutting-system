@@ -283,6 +283,8 @@ class PIManager:
                         continue
 
                     # 数値データの安全な変換
+
+
                     def safe_float(val, default=0.0):
                         try:
                             if pd.isna(val) or val == '':

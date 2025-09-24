@@ -1930,5 +1930,17 @@
     "availability": 999,
     "supplier": "",
     "last_updated": "2025-09-22T10:51:23.641904"
+  },
+  {
+    "material_code": "TEST_DB_001",
+    "material_type": "TEST_STEEL",
+    "thickness": 1.0,
+    "width": 1200,
+    "height": 2400,
+    "area": 2880000,
+    "cost_per_sheet": 20000,
+    "availability": 10,
+    "supplier": "Test Supplier",
+    "last_updated": "2025-09-24T08:59:26.788548"
   }
 ]

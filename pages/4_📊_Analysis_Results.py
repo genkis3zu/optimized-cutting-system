@@ -8,13 +8,13 @@ cost breakdown, and comprehensive optimization reports.
 
 import streamlit as st
 import pandas as pd
-from typing import List, Optional
+from typing import List
 import plotly.express as px
 
 from core.models import PlacementResult
 from ui.page_headers import render_unified_header, get_page_config
 from ui.common_styles import get_common_css
-from ui.metric_cards import render_optimization_metrics, render_status_card
+from ui.metric_cards import render_optimization_metrics
 
 
 def main():
@@ -64,6 +64,7 @@ def render_analysis_overview(results: List[PlacementResult]):
     total_sheets = len(results)
     total_panels = sum(len(result.panels) for result in results)
     total_cost = sum(result.cost for result in results)
+    total_waste = sum(result.waste_area for result in results)
     avg_efficiency = sum(result.efficiency for result in results) / len(results) if results else 0
 
     # Use unified optimization metrics

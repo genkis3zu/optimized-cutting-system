@@ -5,12 +5,10 @@ UI Components for Steel Cutting Optimization System
 
 import streamlit as st
 import pandas as pd
-import json
-from typing import List, Dict, Optional, Tuple, Any
-import io
+from typing import List, Tuple
 
 from core.models import Panel, SteelSheet, OptimizationConstraints
-from core.text_parser import RobustTextParser, ParseResult
+# Removed complex text parser - now using simple grid input
 
 
 class PanelInputComponent:
@@ -18,10 +16,9 @@ class PanelInputComponent:
     Panel input component with Japanese support
     日本語対応パネル入力コンポーネント
     """
-    
+
     def __init__(self):
-        self.parser = RobustTextParser()
-        
+
         # UI text in Japanese and English
         self.ui_text = {
             'panel_input': 'パネル入力 / Panel Input',
@@ -42,32 +39,21 @@ class PanelInputComponent:
             'parse_text': 'テキスト解析 / Parse Text',
             'sample_formats': 'サンプル形式 / Sample Formats'
         }
-    
+
     def render(self) -> List[Panel]:
         """
         Render panel input component and return list of panels
         パネル入力コンポーネントを描画してパネルリストを返す
         """
         st.subheader(self.ui_text['panel_input'])
-        
+
         # Initialize session state for panels
         if 'panels' not in st.session_state:
             st.session_state.panels = []
-        
-        # Input method selection - prioritize file upload, remove manual input
-        input_method = st.radio(
-            self.ui_text['input_method'],
-            ['file_upload', 'text_input'],
-            format_func=lambda x: self.ui_text.get(x, x.replace('_', ' ').title()),
-            horizontal=True,
-            help="ファイルアップロードを推奨します / File upload is recommended"
-        )
 
-        if input_method == 'file_upload':
-            self._render_file_upload()
-        elif input_method == 'text_input':
-            self._render_text_input()
-        
+        # Simple data grid for Excel copy-paste
+        self._render_data_grid()
+
         # Show panel count in sidebar (details moved to main page)
         if st.session_state.panels:
             total_panels = len(st.session_state.panels)
@@ -78,19 +64,19 @@ class PanelInputComponent:
                 st.session_state.show_panel_details = True
 
         return st.session_state.panels
-    
+
     def _render_manual_input(self):
         """Render manual panel input form"""
         st.write("### 手動パネル入力 / Manual Panel Input")
-        
+
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             panel_id = st.text_input(self.ui_text['panel_id'], key="manual_id")
             width = st.number_input(
-                self.ui_text['width'], 
-                min_value=50.0, 
-                max_value=1500.0, 
+                self.ui_text['width'],
+                min_value=50.0,
+                max_value=1500.0,
                 value=300.0,
                 step=10.0,
                 key="manual_width"
@@ -103,7 +89,7 @@ class PanelInputComponent:
                 step=10.0,
                 key="manual_height"
             )
-        
+
         with col2:
             quantity = st.number_input(
                 self.ui_text['quantity'],
@@ -112,21 +98,21 @@ class PanelInputComponent:
                 value=1,
                 key="manual_quantity"
             )
-            
+
             # Material selection with Japanese options
-            material_options = ['SS400', 'SUS304', 'SUS316', 'AL6061', 'その他 / Other']
+            material_options = ['SGCC', 'SUS304', 'SUS316', 'AL6061', 'その他 / Other']
             material = st.selectbox(
                 self.ui_text['material'],
                 material_options,
                 key="manual_material"
             )
-            
+
             if material == 'その他 / Other':
                 material = st.text_input(
                     "材質名を入力 / Enter material name",
                     key="manual_material_custom"
                 )
-            
+
             thickness = st.number_input(
                 self.ui_text['thickness'],
                 min_value=0.1,
@@ -135,7 +121,7 @@ class PanelInputComponent:
                 step=0.1,
                 key="manual_thickness"
             )
-        
+
         with col3:
             priority = st.slider(
                 self.ui_text['priority'],
@@ -144,16 +130,16 @@ class PanelInputComponent:
                 value=5,
                 key="manual_priority"
             )
-            
+
             allow_rotation = st.checkbox(
                 self.ui_text['allow_rotation'],
                 value=True,
                 key="manual_rotation"
             )
-        
+
         # Add panel button
         col_btn1, col_btn2 = st.columns(2)
-        
+
         with col_btn1:
             if st.button(self.ui_text['add_panel'], type="primary"):
                 if panel_id and width and height:
@@ -163,7 +149,7 @@ class PanelInputComponent:
                             width=width,
                             height=height,
                             quantity=quantity,
-                            material=material or 'SS400',
+                            material=material or 'SGCC',
                             thickness=thickness,
                             priority=priority,
                             allow_rotation=allow_rotation
@@ -175,96 +161,148 @@ class PanelInputComponent:
                         st.error(f"パネル追加エラー / Panel add error: {str(e)}")
                 else:
                     st.warning("すべての必須項目を入力してください / Please fill all required fields")
-        
+
         with col_btn2:
             if st.button(self.ui_text['clear_all']):
                 st.session_state.panels = []
                 st.success("すべてのパネルをクリアしました / Cleared all panels")
                 st.rerun()
-    
-    def _render_text_input(self):
-        """Render text data input with parsing"""
-        st.write("### テキストデータ入力 / Text Data Input")
-        
-        # Show sample formats
-        with st.expander(self.ui_text['sample_formats']):
-            st.write("**CSV形式 / CSV Format:**")
-            st.code("""panel1,300,200,2,SS400,6.0,5,true
-panel2,400,300,1,SUS304,3.0,3,false""")
-            
-            st.write("**TSV形式 / TSV Format:**")
-            st.code("""panel1	300	200	2	SS400	6.0	5	true
-panel2	400	300	1	SUS304	3.0	3	false""")
-            
-            st.write("**JSON形式 / JSON Format:**")
-            st.code("""{
-  "panels": [
-    {"id": "panel1", "width": 300, "height": 200, "quantity": 2, "material": "SS400", "thickness": 6.0},
-    {"id": "panel2", "width": 400, "height": 300, "quantity": 1, "material": "SUS304", "thickness": 3.0}
-  ]
-}""")
-        
-        # Text input area
-        text_data = st.text_area(
-            "テキストデータを入力 / Enter text data",
-            height=200,
-            placeholder="CSV, TSV, またはJSON形式でパネルデータを入力してください\nEnter panel data in CSV, TSV, or JSON format",
-            key="text_input_data"
+
+    def _render_data_grid(self):
+        """Render data grid for Excel copy-paste input"""
+        st.write("### 📋 データ入力グリッド / Data Input Grid")
+        st.write("**Excelからコピー貼り付けが可能です / You can copy-paste from Excel**")
+
+        # Define column configuration for the specified headers
+        column_config = {
+            "製造番号": st.column_config.TextColumn("製造番号", help="製造番号を入力", max_chars=20),
+            "PI": st.column_config.TextColumn("PI", help="PIコードを入力", max_chars=20),
+            "部材名": st.column_config.TextColumn("部材名", help="部材名を入力", max_chars=50),
+            "W": st.column_config.NumberColumn("W", help="幅（mm）", min_value=50, max_value=1500, format="%.1f"),
+            "H": st.column_config.NumberColumn("H", help="高さ（mm）", min_value=50, max_value=3100, format="%.1f"),
+            "寸法3": st.column_config.NumberColumn("寸法3", help="寸法3", format="%.1f"),
+            "数量": st.column_config.NumberColumn("数量", help="数量", min_value=1, format="%d"),
+            "識別番号": st.column_config.NumberColumn("識別番号", help="識別番号", format="%d"),
+            "品名": st.column_config.TextColumn("品名", help="品名を入力", max_chars=100),
+            "色": st.column_config.TextColumn("色", help="材質・色を入力", max_chars=20),
+        }
+
+        # Initialize empty dataframe if not exists
+        if 'grid_data' not in st.session_state:
+            # Create empty dataframe with specified columns
+            st.session_state.grid_data = pd.DataFrame({
+                "製造番号": [""] * 10,
+                "PI": [""] * 10,
+                "部材名": [""] * 10,
+                "W": [0.0] * 10,
+                "H": [0.0] * 10,
+                "寸法3": [0.0] * 10,
+                "数量": [1] * 10,
+                "識別番号": [0] * 10,
+                "品名": [""] * 10,
+                "色": [""] * 10,
+            })
+
+        # Data editor with copy-paste capability
+        edited_data = st.data_editor(
+            st.session_state.grid_data,
+            column_config=column_config,
+            num_rows="dynamic",
+            use_container_width=True,
+            height=400,
+            key="data_grid"
         )
-        
-        # Format hint
-        format_hint = st.selectbox(
-            "データ形式 / Data Format",
-            ['auto', 'csv', 'tsv', 'json'],
-            help="自動検出または手動選択 / Auto-detect or manual selection"
-        )
-        
-        if st.button(self.ui_text['parse_text'], type="primary"):
-            if text_data.strip():
-                self._parse_and_add_panels(text_data, format_hint if format_hint != 'auto' else None)
+
+        # Update session state
+        st.session_state.grid_data = edited_data
+
+        # Process data button
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button("📥 データを追加 / Add Data", type="primary"):
+                self._process_grid_data(edited_data)
+
+        with col2:
+            if st.button("🗑️ グリッドをクリア / Clear Grid"):
+                st.session_state.grid_data = pd.DataFrame({
+                    "製造番号": [""] * 10,
+                    "PI": [""] * 10,
+                    "部材名": [""] * 10,
+                    "W": [0.0] * 10,
+                    "H": [0.0] * 10,
+                    "寸法3": [0.0] * 10,
+                    "数量": [1] * 10,
+                    "識別番号": [0] * 10,
+                    "品名": [""] * 10,
+                    "色": [""] * 10,
+                })
+                st.rerun()
+
+        with col3:
+            if st.button("🔄 行を追加 / Add Rows"):
+                # Add 10 more empty rows
+                new_rows = pd.DataFrame({
+                    "製造番号": [""] * 10,
+                    "PI": [""] * 10,
+                    "部材名": [""] * 10,
+                    "W": [0.0] * 10,
+                    "H": [0.0] * 10,
+                    "寸法3": [0.0] * 10,
+                    "数量": [1] * 10,
+                    "識別番号": [0] * 10,
+                    "品名": [""] * 10,
+                    "色": [""] * 10,
+                })
+                st.session_state.grid_data = pd.concat([st.session_state.grid_data, new_rows], ignore_index=True)
+                st.rerun()
+
+    def _process_grid_data(self, data):
+        """Process data from the grid and convert to Panel objects"""
+        try:
+            # Filter out empty rows (where W and H are 0 or empty)
+            valid_rows = []
+            for _, row in data.iterrows():
+                if (row['W'] > 0 and row['H'] > 0 and
+                    str(row['製造番号']).strip() and
+                    str(row['PI']).strip()):
+                    valid_rows.append(row)
+
+            if not valid_rows:
+                st.warning("有効なデータがありません / No valid data found")
+                return
+
+            # Convert rows to Panel objects
+            new_panels = []
+            for row in valid_rows:
+                try:
+                    # Create panel with the grid data
+                    panel = Panel(
+                        id=str(row['製造番号']).strip(),
+                        width=float(row['W']),
+                        height=float(row['H']),
+                        quantity=int(row['数量']),
+                        material=str(row['色']).strip() if str(row['色']).strip() else 'SGCC',
+                        thickness=0.5,  # Default thickness
+                        pi_code=str(row['PI']).strip()
+                    )
+                    new_panels.append(panel)
+                except Exception as e:
+                    st.error(f"行データ変換エラー / Row conversion error: {str(e)}")
+                    continue
+
+            if new_panels:
+                # Add to session state panels
+                if 'panels' not in st.session_state:
+                    st.session_state.panels = []
+                st.session_state.panels.extend(new_panels)
+                st.success(f"{len(new_panels)}個のパネルを追加しました / Added {len(new_panels)} panels")
+                st.rerun()
             else:
-                st.warning("テキストデータを入力してください / Please enter text data")
-    
-    def _render_file_upload(self):
-        """Render file upload component"""
-        st.write("### ファイルアップロード / File Upload")
-        
-        uploaded_file = st.file_uploader(
-            "パネルデータファイルを選択 / Select panel data file",
-            type=['csv', 'txt', 'json', 'xlsx'],
-            help="CSV, TXT, JSON, またはExcelファイルをアップロード / Upload CSV, TXT, JSON, or Excel file"
-        )
-        
-        if uploaded_file is not None:
-            try:
-                # Read file content
-                if uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-                    # Excel file
-                    df = pd.read_excel(uploaded_file)
-                    text_data = df.to_csv(index=False)
-                    format_hint = 'csv'
-                else:
-                    # Text file
-                    content = uploaded_file.read()
-                    if isinstance(content, bytes):
-                        text_data = content.decode('utf-8')
-                    else:
-                        text_data = content
-                    format_hint = None
-                
-                st.write("**ファイル内容プレビュー / File Content Preview:**")
-                st.text(text_data[:500] + "..." if len(text_data) > 500 else text_data)
+                st.error("パネルデータの変換に失敗しました / Failed to convert panel data")
 
-                if st.button("ファイルを解析 / Parse File", type="primary"):
-                    self._parse_and_add_panels(text_data, format_hint)
-
-        # Always show data table if panels exist
-        if st.session_state.panels:
-            st.write("### 📋 読み込みデータ確認 / Loaded Data Verification")
-            self._show_loaded_data_table()
-                    
-            except Exception as e:
-                st.error(f"ファイル読み込みエラー / File read error: {str(e)}")
+        except Exception as e:
+            st.error(f"データ処理エラー / Data processing error: {str(e)}")
 
     def _show_loaded_data_table(self):
         """Show loaded panel data in a table for verification"""
@@ -316,83 +354,11 @@ panel2	400	300	1	SUS304	3.0	3	false""")
             st.error(f"データ表示エラー / Data display error: {str(e)}")
 
 
-    def _parse_and_add_panels(self, text_data: str, format_hint: Optional[str] = None):
-        """Parse text data and add panels to session state"""
-        try:
-            result = self.parser.parse_to_panels(text_data, format_hint)
-
-            if result.is_successful:
-                # Add successfully parsed panels
-                st.session_state.panels.extend(result.panels)
-
-                # Store the original text data as DataFrame for result formatting
-                import pandas as pd
-                import io
-
-                # Try to parse as TSV/CSV to create DataFrame
-                try:
-                    # Try tab-separated first (most common for Japanese data)
-                    if '\t' in text_data:
-                        df = pd.read_csv(io.StringIO(text_data), sep='\t', encoding='utf-8', dtype=str)
-                    else:
-                        # Fall back to comma-separated
-                        df = pd.read_csv(io.StringIO(text_data), encoding='utf-8', dtype=str)
-
-                    # Store DataFrame in session state
-                    st.session_state.panel_data_df = df
-                except:
-                    # If parsing fails, create DataFrame from panels
-                    panel_data = []
-                    for i, panel in enumerate(result.panels, 1):
-                        panel_data.append({
-                            '行番号': i,
-                            'Panel ID': panel.id,
-                            'Ｗ寸法': panel.width,
-                            'Ｈ寸法': panel.height,
-                            '数量': panel.quantity,
-                            '材質': panel.material,
-                            '板厚': panel.thickness,
-                            'ＰＩコード': panel.pi_code if hasattr(panel, 'pi_code') else '',
-                            '展開Ｗ': panel.expanded_width if hasattr(panel, 'expanded_width') else panel.width,
-                            '展開Ｈ': panel.expanded_height if hasattr(panel, 'expanded_height') else panel.height,
-                        })
-                    st.session_state.panel_data_df = pd.DataFrame(panel_data)
-
-                st.success(
-                    f"✅ {len(result.panels)}個のパネルを追加しました / "
-                    f"Added {len(result.panels)} panels\n"
-                    f"成功率 / Success rate: {result.success_rate:.1%}"
-                )
-                
-                # Show warnings if any
-                if result.warnings:
-                    with st.expander("⚠️ 警告 / Warnings"):
-                        for warning in result.warnings:
-                            st.warning(warning)
-                
-                # Show errors if any
-                if result.errors:
-                    with st.expander("❌ エラー / Errors"):
-                        for error in result.errors:
-                            st.error(f"Line {error.line_number}: {error.error_message}")
-                            if error.suggested_fix:
-                                st.info(f"推奨修正 / Suggested fix: {error.suggested_fix}")
-                
-                st.rerun()
-            else:
-                st.error("パネルデータの解析に失敗しました / Failed to parse panel data")
-                if result.errors:
-                    for error in result.errors:
-                        st.error(f"Line {error.line_number}: {error.error_message}")
-        
-        except Exception as e:
-            st.error(f"解析エラー / Parse error: {str(e)}")
-    
     def _render_panel_list(self):
         """Render current panel list"""
         if st.session_state.panels:
             st.write("### 現在のパネル / Current Panels")
-            
+
             # Convert panels to DataFrame for display
             panel_data = []
             for i, panel in enumerate(st.session_state.panels):
@@ -407,16 +373,16 @@ panel2	400	300	1	SUS304	3.0	3	false""")
                     '面積/Area (mm²)': f"{panel.area:,.0f}",
                     '回転/Rotation': '○' if panel.allow_rotation else '×'
                 })
-            
+
             df = pd.DataFrame(panel_data)
             st.dataframe(df, use_container_width=True)
-            
+
             # Summary
             total_panels = len(st.session_state.panels)
             total_quantity = sum(p.quantity for p in st.session_state.panels)
             total_area = sum(p.area * p.quantity for p in st.session_state.panels)
             materials = set(p.material for p in st.session_state.panels)
-            
+
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("パネル種類 / Panel Types", total_panels)
@@ -426,7 +392,7 @@ panel2	400	300	1	SUS304	3.0	3	false""")
                 st.metric("総面積 / Total Area (mm²)", f"{total_area:,.0f}")
             with col4:
                 st.metric("材質種類 / Material Types", len(materials))
-            
+
             # Remove panel functionality
             if st.button("最後のパネルを削除 / Remove Last Panel"):
                 if st.session_state.panels:
@@ -437,7 +403,7 @@ panel2	400	300	1	SUS304	3.0	3	false""")
 
 class SteelSheetComponent:
     """Steel sheet configuration component"""
-    
+
     def __init__(self):
         self.ui_text = {
             'sheet_config': '鋼板設定 / Steel Sheet Configuration',
@@ -448,13 +414,13 @@ class SteelSheetComponent:
             'cost': '単価 (円) / Cost (JPY)',
             'availability': '在庫数 / Stock Count'
         }
-    
+
     def render(self) -> SteelSheet:
         """Render steel sheet configuration"""
         st.subheader(self.ui_text['sheet_config'])
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             width = st.number_input(
                 self.ui_text['width'],
@@ -464,7 +430,7 @@ class SteelSheetComponent:
                 step=50.0,
                 key="sheet_width"
             )
-            
+
             height = st.number_input(
                 self.ui_text['height'],
                 min_value=100.0,
@@ -473,7 +439,7 @@ class SteelSheetComponent:
                 step=50.0,
                 key="sheet_height"
             )
-            
+
             thickness = st.number_input(
                 self.ui_text['thickness'],
                 min_value=0.1,
@@ -482,14 +448,14 @@ class SteelSheetComponent:
                 step=0.1,
                 key="sheet_thickness"
             )
-        
+
         with col2:
             material = st.selectbox(
                 self.ui_text['material'],
-                ['SS400', 'SUS304', 'SUS316', 'AL6061'],
+                ['SGCC', 'SUS304', 'SUS316', 'AL6061'],
                 key="sheet_material"
             )
-            
+
             cost = st.number_input(
                 self.ui_text['cost'],
                 min_value=1000.0,
@@ -498,7 +464,7 @@ class SteelSheetComponent:
                 step=1000.0,
                 key="sheet_cost"
             )
-            
+
             availability = st.number_input(
                 self.ui_text['availability'],
                 min_value=1,
@@ -506,7 +472,7 @@ class SteelSheetComponent:
                 value=100,
                 key="sheet_availability"
             )
-        
+
         return SteelSheet(
             width=width,
             height=height,
@@ -519,7 +485,7 @@ class SteelSheetComponent:
 
 class OptimizationSettingsComponent:
     """Optimization settings configuration component"""
-    
+
     def __init__(self):
         self.ui_text = {
             'optimization_settings': '最適化設定 / Optimization Settings',
@@ -528,13 +494,13 @@ class OptimizationSettingsComponent:
             'allow_rotation': '回転許可 / Allow Rotation',
             'material_separation': '材質別分離 / Material Separation'
         }
-    
+
     def render(self) -> Tuple[str, OptimizationConstraints]:
         """Render optimization settings"""
         st.subheader(self.ui_text['optimization_settings'])
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             algorithm = st.selectbox(
                 self.ui_text['algorithm'],
@@ -542,7 +508,7 @@ class OptimizationSettingsComponent:
                 help="AUTO: 自動選択 / Automatic selection",
                 key="opt_algorithm"
             )
-        
+
         with col2:
             kerf_width = st.number_input(
                 self.ui_text['kerf_width'],
@@ -553,13 +519,13 @@ class OptimizationSettingsComponent:
                 key="opt_kerf_width",
                 help="薄板切断のため0に設定 / Set to 0 for thin sheet cutting"
             )
-            
+
             allow_rotation = st.checkbox(
                 self.ui_text['allow_rotation'],
                 value=True,
                 key="opt_allow_rotation"
             )
-            
+
             material_separation = st.checkbox(
                 self.ui_text['material_separation'],
                 value=True,
@@ -582,7 +548,7 @@ class OptimizationSettingsComponent:
                 help="Intel Iris Xe グラフィックスによる高速化 / Accelerate with Intel Iris Xe Graphics",
                 key="opt_gpu_acceleration"
             )
-        
+
         constraints = OptimizationConstraints(
             max_sheets=1000 if placement_guarantee else 20,  # 100% placement guarantee vs efficiency focus
             kerf_width=kerf_width,
@@ -593,5 +559,5 @@ class OptimizationSettingsComponent:
             enable_gpu=gpu_acceleration,
             gpu_memory_limit=2048
         )
-        
+
         return algorithm, constraints

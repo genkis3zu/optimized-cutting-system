@@ -404,7 +404,7 @@ class WorkInstructionGenerator:
             for i in range(5, len(cutting_sequence), 5):
                 checkpoints.append(
                     f"中間検査 {i} / Intermediate inspection {i} - "
-                    f"Verify cut accuracy and remaining material"
+                    "Verify cut accuracy and remaining material"
                 )
 
         checkpoints.extend([

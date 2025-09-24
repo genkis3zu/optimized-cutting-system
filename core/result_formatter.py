@@ -83,9 +83,19 @@ class ResultFormatter:
         placement_map = {}
         for result in optimization_results:
             for panel in result.panels:
-                if panel.id not in placement_map:
-                    placement_map[panel.id] = []
-                placement_map[panel.id].append({
+                # Handle both Panel and PlacedPanel objects
+                if hasattr(panel, 'panel') and hasattr(panel.panel, 'id'):
+                    # PlacedPanel object
+                    panel_id = panel.panel.id
+                elif hasattr(panel, 'id'):
+                    # Panel object
+                    panel_id = panel.id
+                else:
+                    continue
+
+                if panel_id not in placement_map:
+                    placement_map[panel_id] = []
+                placement_map[panel_id].append({
                     'sheet': result.sheet,
                     'result': result,
                     'material': result.sheet.material if hasattr(result.sheet, 'material') else 'Unknown'

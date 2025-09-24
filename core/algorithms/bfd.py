@@ -694,6 +694,8 @@ class BestFitDecreasing(OptimizationAlgorithm):
 
 
 # Factory function
+
+
 def create_bfd_algorithm() -> BestFitDecreasing:
     """Create BFD algorithm instance"""
     return BestFitDecreasing()

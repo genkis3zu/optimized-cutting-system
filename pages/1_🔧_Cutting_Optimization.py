@@ -6,7 +6,6 @@ Streamlit page for steel cutting optimization with integrated panel input
 """
 
 import streamlit as st
-import logging
 import time
 import pandas as pd
 from typing import List, Optional
@@ -300,24 +299,33 @@ def run_optimization_with_progress(panels: List[Panel], algorithm: str, constrai
 
         algorithm_hint = None if algorithm == 'AUTO' else algorithm
 
-        # Simulate progress updates during optimization
-        for i in range(30, 90, 10):
-            if st.session_state.get('optimization_cancelled', False):
-                status_text.markdown("**⏹️ 最適化を中止しています... / Cancelling optimization...**")
-                return []
+        # Quick progress updates before optimization
+        if st.session_state.get('optimization_cancelled', False):
+            status_text.markdown("**⏹️ 最適化を中止しています... / Cancelling optimization...**")
+            return []
 
-            progress_bar.progress(i)
-            elapsed = time.time() - start_time
-            remaining = max(0, estimated_time["estimated_seconds"] - elapsed)
+        # Enhanced real-time progress updates
+        progress_bar.progress(40)
+        detail_text.markdown(f"**📊 進行状況**: データ準備中... / Preparing data... (Algorithm: {algorithm})")
+        elapsed = time.time() - start_time
+        time_display.markdown(f"""
+        **⏰ 時間情報 / Time Info:**
+        - 経過時間 / Elapsed: {elapsed:.1f}秒
+        - 予測残り時間 / Est. remaining: ~{max(0, estimated_time['estimated_seconds'] - elapsed):.1f}秒
+        - パネル数 / Panel count: {len(panels)}
+        """)
+        time.sleep(0.3)
 
-            time_display.markdown(f"""
-            **⏰ 時間情報 / Time Info:**
-            - 経過時間 / Elapsed: {elapsed:.1f}秒
-            - 残り時間 / Remaining: ~{remaining:.1f}秒
-            """)
-
-            detail_text.markdown(f"**📊 進行状況**: アルゴリズム実行中... ({i}% complete)")
-            time.sleep(1)  # Simulate work and allow cancellation check
+        progress_bar.progress(50)
+        detail_text.markdown(f"**📊 進行状況**: アルゴリズム開始... / Starting algorithm... (Selected: {algorithm})")
+        elapsed = time.time() - start_time
+        time_display.markdown(f"""
+        **⏰ 時間情報 / Time Info:**
+        - 経過時間 / Elapsed: {elapsed:.1f}秒
+        - 予測残り時間 / Est. remaining: ~{max(0, estimated_time['estimated_seconds'] - elapsed):.1f}秒
+        - 処理段階 / Stage: 準備完了 / Ready for processing
+        """)
+        time.sleep(0.3)
 
         # Show what we're optimizing
         st.info(f"""
@@ -326,18 +334,56 @@ def run_optimization_with_progress(panels: List[Panel], algorithm: str, constrai
         - 材質別 / By material: {dict((material, count) for material, count in [(p.material, sum(1 for q in panels if q.material == p.material)) for p in set(panels)])}
         """)
 
-        # Final optimization call
+        # Start actual optimization with progress updates
+        progress_bar.progress(60)
+        detail_text.markdown(f"**📊 進行状況**: 最適化実行中... / Executing optimization... ({algorithm} algorithm)")
+
+        # Update time display during optimization
+        elapsed = time.time() - start_time
+        remaining = max(0, estimated_time["estimated_seconds"] - elapsed)
+        time_display.markdown(f"""
+        **⏰ 時間情報 / Time Info:**
+        - 経過時間 / Elapsed: {elapsed:.1f}秒
+        - 予測残り時間 / Est. remaining: ~{remaining:.1f}秒
+        - 処理段階 / Stage: コア処理実行中 / Core processing
+        """)
+
+        progress_bar.progress(80)
+        detail_text.markdown(f"**📊 進行状況**: 最適化アルゴリズム処理中... / Processing {algorithm} algorithm...")
+
+        # Update time display again
+        elapsed = time.time() - start_time
+        remaining = max(0, estimated_time["estimated_seconds"] - elapsed)
+        time_display.markdown(f"""
+        **⏰ 時間情報 / Time Info:**
+        - 経過時間 / Elapsed: {elapsed:.1f}秒
+        - 予測残り時間 / Est. remaining: ~{remaining:.1f}秒
+        - 処理段階 / Stage: アルゴリズム実行中 / Algorithm running
+        """)
+
+        # Actual optimization call
         results = engine.optimize(
             panels=panels,
             constraints=constraints,
             algorithm_hint=algorithm_hint
         )
 
+        progress_bar.progress(95)
+        detail_text.markdown("**📊 進行状況**: 結果処理中... / Processing results...")
+
+        # Final time update
         processing_time = time.time() - start_time
+        time_display.markdown(f"""
+        **⏰ 時間情報 / Time Info:**
+        - 総処理時間 / Total time: {processing_time:.2f}秒
+        - 処理段階 / Stage: 結果処理中 / Processing results
+        - ステータス / Status: ほぼ完了 / Nearly complete
+        """)
 
         # Phase 4: Completion
         progress_bar.progress(100)
         status_text.markdown(f"**✅ 最適化完了 / Optimization completed in {processing_time:.2f}s**")
+        detail_text.markdown("**📊 進行状況**: 処理完了 / Processing completed ✅")
 
         # Show final statistics with debug info
         if results:
@@ -402,11 +448,12 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
         # Format results to match result.txt format
         result_df = formatter.format_results(st.session_state.panel_data_df, results)
 
-        # Display the formatted table
+        # Display the formatted table with proper column configuration
         st.dataframe(
             result_df,
             use_container_width=True,
             height=400,
+            hide_index=True,  # This prevents the 0-based index from showing as a separate column
             column_config={
                 "鋼板サイズ": st.column_config.TextColumn(
                     "鋼板サイズ",
@@ -417,18 +464,33 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
                     "資材コード",
                     help="母材の資材コード",
                 ),
-                "数量": st.column_config.NumberColumn(
-                    "数量",
-                    help="使用するシート数",
-                    format="%d",
-                ),
                 "ｺﾒﾝﾄ": st.column_config.TextColumn(
-                    "組合せ",
+                    "ｺﾒﾝﾄ",
                     help="同じシートに配置される行番号",
                 ),
                 "歩留まり率": st.column_config.TextColumn(
-                    "歩留まり",
+                    "歩留まり率",
                     help="材料使用効率",
+                ),
+                "製品総面積": st.column_config.NumberColumn(
+                    "製品総面積",
+                    help="製品の総面積",
+                    format="%.0f",
+                ),
+                "素材総面積": st.column_config.NumberColumn(
+                    "素材総面積",
+                    help="素材の総面積",
+                    format="%.0f",
+                ),
+                "面積": st.column_config.NumberColumn(
+                    "面積",
+                    help="シート面積",
+                    format="%.0f",
+                ),
+                "差": st.column_config.NumberColumn(
+                    "差",
+                    help="素材面積と製品面積の差",
+                    format="%.0f",
                 ),
             }
         )
@@ -477,9 +539,17 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
                 if sheet['panels']:
                     panel_list = []
                     for panel in sheet['panels']:
-                        panel_str = f"{panel.id}: {panel.width}x{panel.height}"
-                        if hasattr(panel, 'pi_code'):
-                            panel_str += f" (PI: {panel.pi_code})"
+                        # Handle PlacedPanel objects (panel.panel.id) vs Panel objects (panel.id)
+                        if hasattr(panel, 'panel'):
+                            # PlacedPanel object
+                            panel_str = f"{panel.panel.id}: {panel.panel.width}x{panel.panel.height}"
+                            if hasattr(panel.panel, 'pi_code'):
+                                panel_str += f" (PI: {panel.panel.pi_code})"
+                        else:
+                            # Panel object
+                            panel_str = f"{panel.id}: {panel.width}x{panel.height}"
+                            if hasattr(panel, 'pi_code'):
+                                panel_str += f" (PI: {panel.pi_code})"
                         panel_list.append(panel_str)
                     st.write("配置パネル / Placed panels:")
                     for p in panel_list:
@@ -652,7 +722,6 @@ def export_optimization_report(results: List[PlacementResult]):
     try:
         from cutting.export import DocumentExporter
         import tempfile
-        import os
 
         exporter = DocumentExporter()
 

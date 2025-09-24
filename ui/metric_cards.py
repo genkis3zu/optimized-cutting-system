@@ -37,7 +37,7 @@ def render_metric_row(metrics: List[Dict[str, Any]], columns: int = 3):
         with cols[i]:
             color = colors.get(metric.get('color', 'primary'), colors['primary'])
 
-            st.markdown(f"""
+            st.markdown("""
             <div class="metric-card" style="border-left-color: {color};">
                 <h3>{metric['title']}</h3>
                 <h2 style="color: {color};">{metric['value']}</h2>
@@ -171,7 +171,7 @@ def render_status_card(title: str, message: str, status: str = "info",
     """
     status_class = f"status-{status}" if status != "info" else "action-card"
 
-    st.markdown(f"""
+    st.markdown("""
     <div class="{status_class}">
         <h4 style="margin: 0 0 0.5rem 0;">{title}</h4>
         <p style="margin: 0;">{message}</p>
@@ -201,7 +201,7 @@ def render_progress_metrics(current: int, total: int, label: str = "進捗"):
         st.progress(percentage / 100)
 
     with col2:
-        st.markdown(f"""
+        st.markdown("""
         <div class="metric-card">
             <h3>完了率</h3>
             <h2 style="color: {'#2ca02c' if percentage >= 80 else '#ff7f0e' if percentage >= 50 else '#d62728'};">

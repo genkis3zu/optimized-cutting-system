@@ -495,7 +495,7 @@ class MaterialManagementUI:
         if selected_code:
             material = next((m for m in materials if m.material_code == selected_code), None)
             if material:
-                st.warning(f"""
+                st.warning("""
                 **削除確認 / Confirm Deletion**
 
                 材料コード / Material Code: {material.material_code}

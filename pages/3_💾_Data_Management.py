@@ -8,13 +8,11 @@ Provides comprehensive data persistence management interface
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import json
 from core.persistence_adapter import get_persistence_adapter
 from core.database_manager import get_database_manager
-from core.models import Panel
 from ui.page_headers import render_unified_header, get_page_config
 from ui.common_styles import get_common_css
-from ui.metric_cards import render_metric_row, render_status_card
+from ui.metric_cards import render_metric_row
 
 
 def render_data_management_page():

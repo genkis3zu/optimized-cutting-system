@@ -11,7 +11,14 @@
       "Bash(git push:*)",
       "Bash(git commit:*)",
       "Bash(find:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(git merge:*)",
+      "Bash(git tag:*)",
+      "Bash(pip check)",
+      "Bash(sqlite3:*)",
+      "Bash(rm:*)",
+      "Bash(chmod:*)",
+      "mcp__filesystem__directory_tree"
     ],
     "deny": [],
     "ask": []

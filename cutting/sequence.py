@@ -648,14 +648,14 @@ class CuttingSequenceOptimizer:
         unstable_cuts = [op for op in optimized_ops if op.creates_instability]
         if unstable_cuts:
             updated_notes.append(
-                f"不安定化切断注意 / Instability warning - "
+                "不安定化切断注意 / Instability warning - "
                 f"{len(unstable_cuts)} cuts may create unstable pieces"
             )
 
         support_cuts = [op for op in optimized_ops if op.requires_support]
         if support_cuts:
             updated_notes.append(
-                f"サポート必要 / Support required - "
+                "サポート必要 / Support required - "
                 f"{len(support_cuts)} cuts require additional support"
             )
 

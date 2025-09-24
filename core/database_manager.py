@@ -183,6 +183,8 @@ class DatabaseManager:
             conn.close()
 
     # Materials Management - 材料管理
+
+
     def add_material(self, material: MaterialSheet) -> bool:
         """材料追加"""
         try:
@@ -254,6 +256,8 @@ class DatabaseManager:
             return False
 
     # PI Code Management - PIコード管理
+
+
     def add_pi_code(self, pi_code: PICode) -> bool:
         """PIコード追加"""
         try:
@@ -302,6 +306,8 @@ class DatabaseManager:
             return None
 
     # Project Management - プロジェクト管理
+
+
     def save_project(self, name: str, panels: List[Panel], description: str = "") -> int:
         """プロジェクト保存"""
         try:
@@ -350,6 +356,8 @@ class DatabaseManager:
             return []
 
     # Optimization History - 最適化履歴
+
+
     def save_optimization_result(self, record: OptimizationRecord) -> int:
         """最適化結果保存"""
         try:
@@ -387,6 +395,8 @@ class DatabaseManager:
             return []
 
     # System Configuration - システム設定
+
+
     def set_config(self, key: str, value: str, description: str = "") -> bool:
         """システム設定保存"""
         try:
@@ -415,6 +425,8 @@ class DatabaseManager:
             return default
 
     # Migration and Maintenance - 移行・メンテナンス
+
+
     def migrate_from_json(self) -> bool:
         """JSONファイルからデータ移行"""
         try:

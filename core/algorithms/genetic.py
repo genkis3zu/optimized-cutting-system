@@ -163,6 +163,8 @@ class GeneticAlgorithm(OptimizationAlgorithm):
 
     def _evaluate_population(self, panels: List[Panel], sheet: SteelSheet, constraints: OptimizationConstraints):
         """集団評価（並列処理）"""
+
+
         def evaluate_chromosome(chromosome):
             return self._evaluate_chromosome(chromosome, panels, sheet, constraints)
 

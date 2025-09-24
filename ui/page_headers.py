@@ -20,7 +20,7 @@ def render_unified_header(title_ja: str, title_en: str, description: str = "", i
     """
     st.markdown(get_common_css(), unsafe_allow_html=True)
 
-    st.markdown(f"""
+    st.markdown("""
     <div class="unified-header">
         <h1>{icon} {title_ja}</h1>
         <h3>{title_en}</h3>
@@ -39,7 +39,7 @@ def render_section_header(title: str, subtitle: str = "", color: str = "#1f77b4"
     """
     subtitle_html = f"<p style='margin: 0.5rem 0 0 0; opacity: 0.8;'>{subtitle}</p>" if subtitle else ""
 
-    st.markdown(f"""
+    st.markdown("""
     <div class="content-section">
         <h2 style="color: {color}; border-bottom-color: {color};">{title}</h2>
         {subtitle_html}

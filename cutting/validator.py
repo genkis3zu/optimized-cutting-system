@@ -8,6 +8,8 @@ Validates dimensions, constraints, and manufacturing feasibility
 
 import logging
 import math
+import time
+from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any, Set
 from dataclasses import dataclass
 from enum import Enum
@@ -475,8 +477,8 @@ class EnhancedValidator:
             issues.append(ValidationIssue(
                 level=ValidationResult.CRITICAL,
                 category="boundaries",
-                message=f"Panels exceed sheet boundaries",
-                japanese_message=f"パネルがシート境界を超過",
+                message="Panels exceed sheet boundaries",
+                japanese_message="パネルがシート境界を超過",
                 suggestion="Adjust panel placement or use larger sheet",
                 affected_items=boundary_violations
             ))
@@ -517,8 +519,8 @@ class EnhancedValidator:
             issues.append(ValidationIssue(
                 level=ValidationResult.FAIL,
                 category="kerf",
-                message=f"Insufficient kerf allowance between panels",
-                japanese_message=f"パネル間のケルフ余裕不足",
+                message="Insufficient kerf allowance between panels",
+                japanese_message="パネル間のケルフ余裕不足",
                 suggestion=f"Ensure at least {constraints.kerf_width}mm between panels",
                 affected_items=insufficient_kerf
             ))

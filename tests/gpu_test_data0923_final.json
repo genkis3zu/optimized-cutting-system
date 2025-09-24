@@ -1,0 +1,37 @@
+{
+  "test_info": {
+    "dataset": "data0923.txt",
+    "date": "2023-09-23",
+    "unique_panels": 65,
+    "total_panels": 473,
+    "sheet_size": "1500x3100mm",
+    "time_budget": 300.0,
+    "max_sheets": 20
+  },
+  "results": [
+    {
+      "algorithm": "FFD",
+      "processing_time": 1.0013580322265625e-05,
+      "success": false,
+      "error": "'OptimizationEngine' object has no attribute 'optimize_panels'"
+    },
+    {
+      "algorithm": "BFD",
+      "processing_time": 2.86102294921875e-06,
+      "success": false,
+      "error": "'OptimizationEngine' object has no attribute 'optimize_panels'"
+    },
+    {
+      "algorithm": "HYBRID",
+      "processing_time": 1.9073486328125e-06,
+      "success": false,
+      "error": "'OptimizationEngine' object has no attribute 'optimize_panels'"
+    },
+    {
+      "algorithm": "GENETIC",
+      "processing_time": 1.6689300537109375e-06,
+      "success": false,
+      "error": "'OptimizationEngine' object has no attribute 'optimize_panels'"
+    }
+  ]
+}

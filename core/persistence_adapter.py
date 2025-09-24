@@ -39,6 +39,8 @@ class PersistenceAdapter:
             self.logger.error(f"Migration check failed: {e}")
 
     # Material Management - 材料管理
+
+
     def get_materials(self, material_type: Optional[str] = None) -> List[MaterialSheet]:
         """材料取得 (データベース優先、フォールバック対応)"""
         if self.use_database and self.db_manager:
@@ -109,6 +111,8 @@ class PersistenceAdapter:
         return success
 
     # PI Code Management - PIコード管理
+
+
     def get_pi_code(self, pi_code: str) -> Optional[PICode]:
         """PIコード取得"""
         if self.use_database and self.db_manager:
@@ -151,6 +155,8 @@ class PersistenceAdapter:
         return success
 
     # Project Management - プロジェクト管理
+
+
     def save_project(self, name: str, panels: List[Panel], description: str = "") -> int:
         """プロジェクト保存"""
         if self.use_database and self.db_manager:
@@ -234,6 +240,8 @@ class PersistenceAdapter:
             return []
 
     # Optimization History - 最適化履歴
+
+
     def save_optimization_result(self,
                                 panels: List[Panel],
                                 constraints: OptimizationConstraints,
@@ -332,6 +340,8 @@ class PersistenceAdapter:
             return []
 
     # System Configuration - システム設定
+
+
     def set_config(self, key: str, value: str, description: str = "") -> bool:
         """システム設定保存"""
         if self.use_database and self.db_manager:
@@ -374,6 +384,8 @@ class PersistenceAdapter:
         return default
 
     # Maintenance Operations - メンテナンス操作
+
+
     def backup_all_data(self, backup_dir: str) -> bool:
         """全データバックアップ"""
         import os

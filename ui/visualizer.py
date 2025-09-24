@@ -10,11 +10,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict
 import colorsys
-import random
 
-from core.models import PlacementResult, PlacedPanel
+from core.models import PlacementResult
 
 
 class CuttingLayoutVisualizer:

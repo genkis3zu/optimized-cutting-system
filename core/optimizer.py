@@ -38,11 +38,11 @@ class OptimizationAlgorithm(ABC):
     Abstract base class for optimization algorithms
     最適化アルゴリズムの抽象基底クラス
     """
-    
+
     def __init__(self, name: str):
         self.name = name
         self.logger = logging.getLogger(f"{__name__}.{name}")
-    
+
     @abstractmethod
     def optimize(
         self,
@@ -56,7 +56,7 @@ class OptimizationAlgorithm(ABC):
         """
         # Implementation must be provided by concrete classes
         raise NotImplementedError(f"Algorithm {self.name} must implement optimize() method")
-    
+
     @abstractmethod
     def estimate_time(self, panel_count: int, complexity: float) -> float:
         """
@@ -65,7 +65,7 @@ class OptimizationAlgorithm(ABC):
         """
         # Implementation must be provided by concrete classes
         raise NotImplementedError(f"Algorithm {self.name} must implement estimate_time() method")
-    
+
     def calculate_complexity(self, panels: List[Panel]) -> float:
         """
         Calculate problem complexity (0-1)
@@ -73,22 +73,22 @@ class OptimizationAlgorithm(ABC):
         """
         if not panels:
             return 0.0
-        
+
         # Size diversity factor
         unique_sizes = len(set((p.width, p.height) for p in panels))
         size_diversity = min(1.0, unique_sizes / len(panels))
-        
+
         # Quantity factor
         total_quantity = sum(p.quantity for p in panels)
         quantity_factor = min(1.0, total_quantity / 100)
-        
+
         # Rotation complexity
         rotation_factor = sum(1 for p in panels if p.allow_rotation) / len(panels)
-        
+
         # Material diversity
         unique_materials = len(set(p.material for p in panels))
         material_factor = min(1.0, unique_materials / 10)
-        
+
         # Combined complexity
         complexity = (
             size_diversity * 0.4 +
@@ -96,9 +96,9 @@ class OptimizationAlgorithm(ABC):
             rotation_factor * 0.2 +
             material_factor * 0.1
         )
-        
+
         return min(1.0, complexity)
-    
+
     def group_by_material(self, panels: List[Panel]) -> Dict[str, List[Panel]]:
         """
         Group panels by material type
@@ -120,9 +120,9 @@ class OptimizationAlgorithm(ABC):
                     block_order=panel.block_order
                 )
                 material_groups[panel.material].append(individual_panel)
-        
+
         return dict(material_groups)
-    
+
     def validate_placement(self, placement: PlacementResult) -> bool:
         """
         Validate placement result
@@ -143,18 +143,18 @@ class OptimizationEngine:
     Main optimization engine with algorithm selection
     アルゴリズム選択機能付きメイン最適化エンジン
     """
-    
+
     def __init__(self):
         self.algorithms = {}
         self.logger = logging.getLogger(__name__)
         self.performance_monitor = PerformanceMonitor()
         self.timeout_manager = TimeoutManager()
-        
+
     def register_algorithm(self, algorithm: OptimizationAlgorithm):
         """Register an optimization algorithm"""
         self.algorithms[algorithm.name] = algorithm
         self.logger.info(f"Registered algorithm: {algorithm.name}")
-    
+
     def select_algorithm(
         self,
         panels: List[Panel],
@@ -255,22 +255,22 @@ class OptimizationEngine:
         else:
             self.logger.error("No algorithms available!")
             raise RuntimeError("No optimization algorithms registered")
-    
+
     def _calculate_problem_complexity(self, panels: List[Panel]) -> float:
         """Calculate normalized problem complexity"""
         if not panels:
             return 0.0
-        
+
         # Use first algorithm to calculate complexity
         if self.algorithms:
             first_algo = next(iter(self.algorithms.values()))
             return first_algo.calculate_complexity(panels)
-        
+
         # Fallback calculation
         unique_sizes = len(set((p.width, p.height) for p in panels))
         total_panels = sum(p.quantity for p in panels)
         diversity = unique_sizes / len(panels) if panels else 0
-        
+
         return min(1.0, (total_panels * diversity) / 1000)
 
     def _calculate_expanded_dimensions(self, panels: List[Panel], pi_manager) -> Dict[str, float]:
@@ -372,16 +372,16 @@ class OptimizationEngine:
         if not panels:
             self.logger.warning("No panels provided for optimization")
             return []
-        
+
         # Set default constraints
         if constraints is None:
             constraints = OptimizationConstraints()
-        
+
         constraints.validate()
-        
+
         # Select algorithm
         algorithm_name = algorithm_hint or self.select_algorithm(panels, constraints)
-        
+
         if algorithm_name not in self.algorithms:
             self.logger.warning(f"Algorithm {algorithm_name} not found, using available fallback")
             # Find first available algorithm
@@ -392,13 +392,13 @@ class OptimizationEngine:
                 raise RuntimeError("No algorithms registered in optimization engine")
 
         algorithm = self.algorithms[algorithm_name]
-        
+
         self.logger.info(
             f"Starting optimization with {algorithm_name} "
             f"for {len(panels)} panel types, "
             f"total quantity: {sum(p.quantity for p in panels)}"
         )
-        
+
         # Calculate expanded dimensions using PI codes
         pi_manager = get_pi_manager()
         expansion_summary = self._calculate_expanded_dimensions(panels, pi_manager)
@@ -486,7 +486,16 @@ class OptimizationEngine:
                             material_results.append(best_result)
 
                             # Remove placed panels from remaining list
-                            placed_ids = {p.id for p in best_result.panels}
+                            # best_result.panels might contain PlacedPanel objects, so we need to handle both cases
+                            placed_ids = set()
+                            for p in best_result.panels:
+                                if hasattr(p, 'panel') and hasattr(p.panel, 'id'):
+                                    # PlacedPanel object
+                                    placed_ids.add(p.panel.id)
+                                elif hasattr(p, 'id'):
+                                    # Panel object
+                                    placed_ids.add(p.id)
+
                             remaining_panels = [p for p in remaining_panels if p.id not in placed_ids]
 
                             self.logger.info(
@@ -644,15 +653,15 @@ class OptimizationEngine:
                 else:
                     self.logger.error("No materials available for optimization")
                     return []
-        
+
         except Exception as e:
             self.logger.error(f"Optimization failed: {e}")
             return []
-        
+
         finally:
             processing_time = time.time() - start_time
             self.performance_monitor.stop_monitoring()
-            
+
             self.logger.info(f"Optimization completed in {processing_time:.2f} seconds")
 
     def _force_single_panel_placement(
@@ -685,7 +694,7 @@ class OptimizationEngine:
             self.logger.error(f"Force placement error: {e}")
 
         return None
-    
+
     def _optimize_with_timeout(
         self,
         algorithm: OptimizationAlgorithm,
@@ -756,7 +765,7 @@ class OptimizationEngine:
         except FutureTimeoutError:
             self.logger.warning(
                 f"Algorithm {algorithm.name} timed out after {constraints.time_budget:.1f}s, "
-                f"trying fallback approach"
+                "trying fallback approach"
             )
             # Attempt quick fallback optimization
             return self._fallback_optimization(algorithm, panels, sheet, constraints, start_time)
@@ -1078,6 +1087,8 @@ class TimeoutManager:
 
 
 # Factory function for creating optimization engine
+
+
 def create_optimization_engine() -> OptimizationEngine:
     """
     Create and configure optimization engine with default algorithms
