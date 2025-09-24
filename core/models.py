@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class Panel:
     """
     Panel data structure with validation

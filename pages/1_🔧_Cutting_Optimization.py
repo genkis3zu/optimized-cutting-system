@@ -63,37 +63,31 @@ def render_panel_input_section():
     if panels:
         material_manager = get_material_manager()
 
-        # Enhanced validation display
-        st.markdown("### 🔍 材料検証 / Material Validation")
+        # Compact material validation display
+        with st.expander("🔍 材料検証 / Material Validation", expanded=False):
+            validation_issues = []
+            validation_success = []
 
-        validation_issues = []
-        validation_success = []
+            for panel in panels:
+                is_valid, message = material_manager.validate_panel_against_inventory(
+                    panel.material, panel.thickness, panel.width, panel.height
+                )
+                if not is_valid:
+                    validation_issues.append(f"⚠️ Panel {panel.id}: {message}")
+                else:
+                    validation_success.append(f"✅ Panel {panel.id}: {message}")
 
-        for panel in panels:
-            is_valid, message = material_manager.validate_panel_against_inventory(
-                panel.material, panel.thickness, panel.width, panel.height
-            )
-            if not is_valid:
-                validation_issues.append(f"⚠️ Panel {panel.id}: {message}")
+            if validation_issues:
+                st.warning("⚠️ 材料検証エラーがあります / Material validation issues found")
+                for issue in validation_issues:
+                    st.text(issue)
+                st.info("💡 材料管理ページで在庫を確認・追加してください / Please check inventory in Material Management page")
             else:
-                validation_success.append(f"✅ Panel {panel.id}: {message}")
+                st.success("✅ すべての材料が検証されました / All materials validated")
 
-        if validation_issues:
-            st.markdown("""
-            <div class="warning-message">
-                <h4>⚠️ 材料検証エラー / Material Validation Issues</h4>
-            </div>
-            """, unsafe_allow_html=True)
-
-            for issue in validation_issues:
-                st.warning(issue)
-
-            st.info("💡 材料管理ページで在庫を確認・追加してください / Please check inventory in Material Management page")
-
-        if validation_success:
-            with st.expander("✅ 検証成功 / Validation Success", expanded=False):
+            if validation_success and st.checkbox("詳細を表示 / Show details", key="validation_details"):
                 for success in validation_success:
-                    st.success(success)
+                    st.text(success)
 
         # Enhanced panel summary
         col1, col2, col3, col4 = st.columns(4)

@@ -254,12 +254,66 @@ panel2	400	300	1	SUS304	3.0	3	false""")
                 
                 st.write("**ファイル内容プレビュー / File Content Preview:**")
                 st.text(text_data[:500] + "..." if len(text_data) > 500 else text_data)
-                
+
                 if st.button("ファイルを解析 / Parse File", type="primary"):
                     self._parse_and_add_panels(text_data, format_hint)
+
+        # Always show data table if panels exist
+        if st.session_state.panels:
+            st.write("### 📋 読み込みデータ確認 / Loaded Data Verification")
+            self._show_loaded_data_table()
                     
             except Exception as e:
                 st.error(f"ファイル読み込みエラー / File read error: {str(e)}")
+
+    def _show_loaded_data_table(self):
+        """Show loaded panel data in a table for verification"""
+        try:
+            # Convert panels to DataFrame for display
+            data = []
+            for panel in st.session_state.panels:
+                data.append({
+                    'パネルID / Panel ID': panel.id,
+                    '幅 / Width (mm)': panel.width,
+                    '高さ / Height (mm)': panel.height,
+                    '数量 / Quantity': panel.quantity,
+                    '材質 / Material': panel.material,
+                    '板厚 / Thickness (mm)': panel.thickness,
+                    '回転許可 / Rotation': '○' if panel.allow_rotation else '×',
+                    '面積 / Area (mm²)': f"{panel.area:,.0f}"
+                })
+
+            df = pd.DataFrame(data)
+
+            # Display summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("パネル種類 / Panel Types", len(st.session_state.panels))
+            with col2:
+                total_qty = sum(p.quantity for p in st.session_state.panels)
+                st.metric("総数量 / Total Qty", total_qty)
+            with col3:
+                total_area = sum(p.area * p.quantity for p in st.session_state.panels)
+                st.metric("総面積 / Total Area", f"{total_area:,.0f} mm²")
+            with col4:
+                materials = set(p.material for p in st.session_state.panels)
+                st.metric("材質種類 / Material Types", len(materials))
+
+            # Display the data table
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                height=min(400, len(df) * 35 + 50)  # Limit height but allow scrolling
+            )
+
+            # Clear data button
+            if st.button("データをクリア / Clear Data", type="secondary"):
+                st.session_state.panels = []
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"データ表示エラー / Data display error: {str(e)}")
 
 
     def _parse_and_add_panels(self, text_data: str, format_hint: Optional[str] = None):
