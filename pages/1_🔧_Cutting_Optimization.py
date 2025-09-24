@@ -20,6 +20,7 @@ from ui.components import PanelInputComponent, OptimizationSettingsComponent
 from core.material_manager import get_material_manager
 from ui.page_headers import render_unified_header, get_page_config
 from ui.common_styles import get_common_css
+from core.result_formatter import ResultFormatter
 
 
 def setup_page():
@@ -324,6 +325,13 @@ def run_optimization_with_progress(panels: List[Panel], algorithm: str, constrai
             detail_text.markdown(f"**📊 進行状況**: アルゴリズム実行中... ({i}% complete)")
             time.sleep(1)  # Simulate work and allow cancellation check
 
+        # Show what we're optimizing
+        st.info(f"""
+        **🔍 最適化対象 / Optimization Target:**
+        - 入力パネル数 / Input panels: {len(panels)}
+        - 材質別 / By material: {dict((material, count) for material, count in [(p.material, sum(1 for q in panels if q.material == p.material)) for p in set(panels)])}
+        """)
+
         # Final optimization call
         results = engine.optimize(
             panels=panels,
@@ -337,17 +345,29 @@ def run_optimization_with_progress(panels: List[Panel], algorithm: str, constrai
         progress_bar.progress(100)
         status_text.markdown(f"**✅ 最適化完了 / Optimization completed in {processing_time:.2f}s**")
 
-        # Show final statistics
+        # Show final statistics with debug info
         if results:
             total_panels = sum(len(sheet.panels) for sheet in results)
+            total_expected = len(panels)
             efficiency = (sum(sheet.efficiency for sheet in results) / len(results)) if results else 0
 
             detail_text.markdown(f"""
             **📊 最終結果 / Final Results:**
+            - 入力パネル数 / Input panels: {total_expected}
             - 配置パネル数 / Placed panels: {total_panels}
+            - 配置率 / Placement rate: {(total_panels/total_expected*100):.1f}%
             - 平均効率 / Average efficiency: {efficiency:.1%}
             - 使用シート数 / Sheets used: {len(results)}
             """)
+
+            # Warning if not all panels placed
+            if total_panels < total_expected:
+                st.warning(f"""
+                ⚠️ 警告: {total_expected - total_panels} パネルが配置されていません！
+                Warning: {total_expected - total_panels} panels were not placed!
+                """)
+        else:
+            st.error("結果なし / No results returned from optimization")
 
         return results
 
@@ -367,7 +387,7 @@ def run_optimization(panels: List[Panel], algorithm: str, constraints):
     return run_optimization_with_progress(panels, algorithm, constraints, estimated_time)
 
 
-def render_enhanced_results(results: List[PlacementResult]):
+def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] = None):
     """Render enhanced optimization results with comprehensive analytics"""
     if not results:
         st.warning("最適化結果がありません / No optimization results")
@@ -378,6 +398,102 @@ def render_enhanced_results(results: List[PlacementResult]):
         <h2>🎯 最適化結果 / Optimization Results</h2>
     </div>
     """, unsafe_allow_html=True)
+
+    # Create formatted result table like result.txt
+    st.markdown("### 📊 切断割当表 / Cutting Assignment Table")
+
+    if panels and hasattr(st.session_state, 'panel_data_df'):
+        formatter = ResultFormatter()
+
+        # Format results to match result.txt format
+        result_df = formatter.format_results(st.session_state.panel_data_df, results)
+
+        # Display the formatted table
+        st.dataframe(
+            result_df,
+            use_container_width=True,
+            height=400,
+            column_config={
+                "鋼板サイズ": st.column_config.TextColumn(
+                    "鋼板サイズ",
+                    help="使用する母材のサイズ",
+                    width="large",
+                ),
+                "資材コード": st.column_config.TextColumn(
+                    "資材コード",
+                    help="母材の資材コード",
+                ),
+                "数量": st.column_config.NumberColumn(
+                    "数量",
+                    help="使用するシート数",
+                    format="%d",
+                ),
+                "ｺﾒﾝﾄ": st.column_config.TextColumn(
+                    "組合せ",
+                    help="同じシートに配置される行番号",
+                ),
+                "歩留まり率": st.column_config.TextColumn(
+                    "歩留まり",
+                    help="材料使用効率",
+                ),
+            }
+        )
+
+        # Download button for the formatted results
+        csv_data = result_df.to_csv(sep='\t', index=False)
+        st.download_button(
+            label="📥 結果をダウンロード (TSV)",
+            data=csv_data,
+            file_name="optimization_result.txt",
+            mime="text/tab-separated-values",
+        )
+
+    st.markdown("---")
+
+    # Debug information - Show detailed placement information
+    st.markdown("### 📋 配置詳細 / Placement Details")
+
+    # Count panels per material and sheet
+    material_summary = {}
+    for idx, result in enumerate(results, 1):
+        material = result.sheet.material if hasattr(result, 'sheet') else 'Unknown'
+        sheet_dims = f"{result.sheet.width}x{result.sheet.height}" if hasattr(result, 'sheet') else 'Unknown'
+
+        if material not in material_summary:
+            material_summary[material] = []
+
+        panel_info = {
+            'sheet_num': idx,
+            'sheet_dims': sheet_dims,
+            'panels': result.panels if hasattr(result, 'panels') else [],
+            'efficiency': result.efficiency if hasattr(result, 'efficiency') else 0
+        }
+        material_summary[material].append(panel_info)
+
+    # Display material-wise breakdown
+    for material, sheets in material_summary.items():
+        st.markdown(f"**材質 / Material: {material}**")
+        total_panels_for_material = sum(len(sheet['panels']) for sheet in sheets)
+        st.write(f"- シート数 / Sheets: {len(sheets)}")
+        st.write(f"- 配置パネル数 / Placed panels: {total_panels_for_material}")
+
+        # Show each sheet's details
+        for sheet in sheets:
+            with st.expander(f"シート #{sheet['sheet_num']} ({sheet['sheet_dims']}) - {len(sheet['panels'])} panels - {sheet['efficiency']:.1%} efficiency"):
+                if sheet['panels']:
+                    panel_list = []
+                    for panel in sheet['panels']:
+                        panel_str = f"{panel.id}: {panel.width}x{panel.height}"
+                        if hasattr(panel, 'pi_code'):
+                            panel_str += f" (PI: {panel.pi_code})"
+                        panel_list.append(panel_str)
+                    st.write("配置パネル / Placed panels:")
+                    for p in panel_list:
+                        st.write(f"  - {p}")
+                else:
+                    st.write("パネルなし / No panels")
+
+    st.markdown("---")
 
     # Enhanced summary metrics
     total_panels = sum(len(result.panels) for result in results)
@@ -737,7 +853,7 @@ def main():
                     # Store results in session state
                     st.session_state.optimization_results = results
                     st.session_state.optimization_running = False
-                    render_enhanced_results(results)
+                    render_enhanced_results(results, panels)
                 else:
                     st.session_state.optimization_running = False
                     if not st.session_state.get('optimization_cancelled', False):
@@ -753,7 +869,8 @@ def main():
             if st.checkbox("📊 前回の結果を表示 / Show Previous Results", value=False):
                 st.markdown("---")
                 st.subheader("📈 前回の最適化結果 / Previous Optimization Results")
-                render_enhanced_results(st.session_state.optimization_results)
+                # Use current panels for the previous results display
+                render_enhanced_results(st.session_state.optimization_results, panels if panels else None)
 
     else:
         # Show brief welcome message when no panels are entered

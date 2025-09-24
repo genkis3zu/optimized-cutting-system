@@ -266,11 +266,44 @@ panel2	400	300	1	SUS304	3.0	3	false""")
         """Parse text data and add panels to session state"""
         try:
             result = self.parser.parse_to_panels(text_data, format_hint)
-            
+
             if result.is_successful:
                 # Add successfully parsed panels
                 st.session_state.panels.extend(result.panels)
-                
+
+                # Store the original text data as DataFrame for result formatting
+                import pandas as pd
+                import io
+
+                # Try to parse as TSV/CSV to create DataFrame
+                try:
+                    # Try tab-separated first (most common for Japanese data)
+                    if '\t' in text_data:
+                        df = pd.read_csv(io.StringIO(text_data), sep='\t', encoding='utf-8', dtype=str)
+                    else:
+                        # Fall back to comma-separated
+                        df = pd.read_csv(io.StringIO(text_data), encoding='utf-8', dtype=str)
+
+                    # Store DataFrame in session state
+                    st.session_state.panel_data_df = df
+                except:
+                    # If parsing fails, create DataFrame from panels
+                    panel_data = []
+                    for i, panel in enumerate(result.panels, 1):
+                        panel_data.append({
+                            '行番号': i,
+                            'Panel ID': panel.id,
+                            'Ｗ寸法': panel.width,
+                            'Ｈ寸法': panel.height,
+                            '数量': panel.quantity,
+                            '材質': panel.material,
+                            '板厚': panel.thickness,
+                            'ＰＩコード': panel.pi_code if hasattr(panel, 'pi_code') else '',
+                            '展開Ｗ': panel.expanded_width if hasattr(panel, 'expanded_width') else panel.width,
+                            '展開Ｈ': panel.expanded_height if hasattr(panel, 'expanded_height') else panel.height,
+                        })
+                    st.session_state.panel_data_df = pd.DataFrame(panel_data)
+
                 st.success(
                     f"✅ {len(result.panels)}個のパネルを追加しました / "
                     f"Added {len(result.panels)} panels\n"

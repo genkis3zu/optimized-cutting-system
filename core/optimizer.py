@@ -446,41 +446,61 @@ class OptimizationEngine:
                     # Sort material panels by priority and block order for consistency
                     material_panels.sort(key=lambda p: (p.priority, p.block_order))
 
-                    for sheet in available_sheets:
-                        self.logger.debug(f"Trying sheet {sheet.width}×{sheet.height}mm for material {normalized_material}")
+                    # Process panels in batches to use multiple sheets if needed
+                    remaining_panels = material_panels.copy()
+                    material_results = []
 
-                        # Optimize material block with individual timeout
-                        material_constraints = OptimizationConstraints(
-                            max_sheets=1,  # Try one sheet at a time
-                            kerf_width=constraints.kerf_width,
-                            min_waste_piece=constraints.min_waste_piece,
-                            allow_rotation=constraints.allow_rotation,
-                            material_separation=False,  # Already separated
-                            time_budget=constraints.time_budget / len(material_groups) / len(available_sheets),  # Distribute time budget
-                            target_efficiency=constraints.target_efficiency
-                        )
+                    while remaining_panels:
+                        best_result = None
+                        best_efficiency = 0
+                        best_sheet = None
 
-                        result = self._optimize_with_timeout(
-                            algorithm, material_panels, sheet, material_constraints
-                        )
+                        for sheet in available_sheets:
+                            self.logger.debug(f"Trying sheet {sheet.width}×{sheet.height}mm for {len(remaining_panels)} remaining panels of material {normalized_material}")
 
-                        if result and result.efficiency > best_efficiency:
-                            best_result = result
-                            best_efficiency = result.efficiency
-                            self.logger.info(f"Better solution found with {sheet.width}×{sheet.height}mm: {result.efficiency:.1%} efficiency")
+                            # Optimize material block with individual timeout
+                            material_constraints = OptimizationConstraints(
+                                max_sheets=1,  # Try one sheet at a time
+                                kerf_width=constraints.kerf_width,
+                                min_waste_piece=constraints.min_waste_piece,
+                                allow_rotation=constraints.allow_rotation,
+                                material_separation=False,  # Already separated
+                                time_budget=min(30.0, constraints.time_budget / len(material_groups)),  # Reasonable timeout per material
+                                target_efficiency=constraints.target_efficiency
+                            )
 
-                    # Use the best result found for this material
-                    if best_result:
-                        best_result.material_block = normalized_material
-                        best_result.sheet_id = len(results) + 1  # Sequential sheet IDs
-                        results.append(best_result)
+                            result = self._optimize_with_timeout(
+                                algorithm, remaining_panels, sheet, material_constraints
+                            )
 
-                        self.logger.info(
-                            f"Material {normalized_material}: {len(best_result.panels)} panels placed, "
-                            f"efficiency {best_result.efficiency:.1%} on {best_result.sheet.width}×{best_result.sheet.height}mm sheet"
-                        )
-                    else:
-                        self.logger.warning(f"Failed to optimize material block: {normalized_material}")
+                            if result and result.efficiency > best_efficiency:
+                                best_result = result
+                                best_sheet = sheet
+                                best_efficiency = result.efficiency
+                                self.logger.info(f"Found solution with {sheet.width}×{sheet.height}mm: {len(result.panels)} panels, {result.efficiency:.1%} efficiency")
+
+                        # Use the best result found for this batch
+                        if best_result and best_result.panels:
+                            best_result.material_block = normalized_material
+                            best_result.sheet_id = len(results) + len(material_results) + 1  # Sequential sheet IDs
+                            material_results.append(best_result)
+
+                            # Remove placed panels from remaining list
+                            placed_ids = {p.id for p in best_result.panels}
+                            remaining_panels = [p for p in remaining_panels if p.id not in placed_ids]
+
+                            self.logger.info(
+                                f"Material {normalized_material}: Placed {len(best_result.panels)} panels on sheet #{best_result.sheet_id}, "
+                                f"{len(remaining_panels)} panels remaining"
+                            )
+                        else:
+                            # No valid placement found for remaining panels
+                            if remaining_panels:
+                                self.logger.warning(f"Could not place {len(remaining_panels)} panels of material {normalized_material}")
+                            break
+
+                    # Add all results for this material
+                    results.extend(material_results)
 
                 # Log overall results
                 total_panels = sum(len(r.panels) for r in results)

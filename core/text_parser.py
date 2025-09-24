@@ -53,7 +53,8 @@ class ParseResult:
     format_detected: str
     total_lines: int
     success_rate: float
-    
+    dataframe: Optional[pd.DataFrame] = None  # Original data as DataFrame
+
     @property
     def is_successful(self) -> bool:
         """Check if parsing was generally successful"""
