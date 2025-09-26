@@ -68,7 +68,26 @@ class ResultFormatter:
         # Create a copy of the original dataframe
         result_df = original_df.copy()
 
-        # Add new columns for results
+        # Map column names to match result.txt format exactly
+        column_mapping = {
+            '製造番号': '製番',
+            'PI': 'ＰＩコード',
+            '部材名': '品名',
+            'W': 'Ｗ寸法',
+            'H': 'Ｈ寸法',
+            'NCNO': 'NCNO',
+            '色': '色',
+            '板厚': '板厚',
+            '展開Ｈ': '展開Ｈ',
+            '展開Ｗ': '展開Ｗ'
+        }
+
+        # Rename existing columns to match result.txt format
+        for old_name, new_name in column_mapping.items():
+            if old_name in result_df.columns:
+                result_df.rename(columns={old_name: new_name}, inplace=True)
+
+        # Add new columns for results (matching result.txt format exactly)
         result_df['鋼板サイズ'] = ''
         result_df['資材コード'] = ''
         result_df['数量'] = 0
@@ -142,8 +161,14 @@ class ResultFormatter:
                         if size_key in self.material_codes[material_key]:
                             result_df.at[idx, '資材コード'] = self.material_codes[material_key][size_key]
 
-                    # Set quantity (sheets used for this panel)
-                    result_df.at[idx, '数量'] = 1
+                    # Set original panel quantity from input data
+                    original_quantity = row.get('数量', row.get('quantity', 1))
+                    if original_quantity <= 0:
+                        original_quantity = 1  # fallback
+                    result_df.at[idx, '数量'] = original_quantity
+
+                    # Set sheet quantity (always 1 for individual sheet assignment)
+                    result_df.at[idx, 'シート数量'] = 1
 
                     # Find combined rows (panels on same sheet)
                     sheet_key = f"{material}_{sheet.width}x{sheet.height}"
@@ -173,6 +198,22 @@ class ResultFormatter:
                 result_df.at[idx, 'ｺﾒﾝﾄ'] = '残材/多数子'
                 panel_area = row.get('展開Ｗ', 0) * row.get('展開Ｈ', 0)
                 result_df.at[idx, '製品総面積'] = panel_area * row.get('数量', 1)
+
+        # Fix duplicate column names by creating second quantity column
+        if '数量' in result_df.columns:
+            # Create a copy for the second quantity column position (for sheet quantity)
+            result_df['シート数量'] = result_df['数量']
+
+        # Reorder columns to match result.txt format exactly
+        result_txt_columns = [
+            '製番', 'ＰＩコード', '品名', 'Ｗ寸法', 'Ｈ寸法', 'NCNO', '数量', '色', '板厚',
+            '展開Ｈ', '展開Ｗ', '鋼板サイズ', '資材コード', 'シート数量', 'ｺﾒﾝﾄ', '面積',
+            '製品総面積', '素材総面積', '歩留まり率', '差'
+        ]
+
+        # Only include columns that exist in the DataFrame
+        available_columns = [col for col in result_txt_columns if col in result_df.columns]
+        result_df = result_df[available_columns]
 
         return result_df
 

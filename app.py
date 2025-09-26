@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Steel Cutting Optimization System - Main Application
 鋼板切断最適化システム - メインアプリケーション
@@ -6,9 +8,15 @@ A Streamlit-based application for optimizing steel panel cutting operations
 with guillotine cut constraints.
 """
 
+# Standard library imports
+import traceback
+
+# Third-party imports
 import streamlit as st
+
+# Local imports
 from ui.common_styles import get_common_css
-from ui.page_headers import render_unified_header, get_page_config
+from ui.page_headers import get_page_config, render_unified_header
 
 # Configure page
 st.set_page_config(
@@ -84,8 +92,20 @@ try:
         history_count = len(persistence.get_optimization_history()) if status.get('database_available') else 0
         st.markdown(f"**最適化履歴**: {history_count}件")
 
+except ImportError as e:
+    st.error(f"モジュール読み込みエラー / Module import error: {e}")
+    st.info("必要な依存関係がインストールされていない可能性があります")
+except ConnectionError as e:
+    st.warning(f"データベース接続エラー / Database connection error: {e}")
+    st.info("データベースサーバーの状態を確認してください")
+except (AttributeError, KeyError) as e:
+    st.warning(f"設定エラー / Configuration error: {e}")
+    st.info("システム設定を確認してください")
 except Exception as e:
-    st.warning(f"システム状態取得エラー: {e}")
+    st.error(f"システム状態取得エラー / System status error: {e}")
+    with st.expander("詳細ログ / Error Details"):
+        st.code(str(e))
+        st.code(traceback.format_exc())
 
 # Usage instructions
 st.markdown("---")

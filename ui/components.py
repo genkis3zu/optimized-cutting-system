@@ -54,14 +54,11 @@ class PanelInputComponent:
         # Simple data grid for Excel copy-paste
         self._render_data_grid()
 
-        # Show panel count in sidebar (details moved to main page)
+        # Show panel count in sidebar
         if st.session_state.panels:
             total_panels = len(st.session_state.panels)
             total_quantity = sum(p.quantity for p in st.session_state.panels)
             st.info(f"📋 パネル: {total_panels}種類, {total_quantity}個")
-
-            if st.button("詳細をメインページで確認 / View Details on Main Page"):
-                st.session_state.show_panel_details = True
 
         return st.session_state.panels
 
@@ -277,15 +274,29 @@ class PanelInputComponent:
             for row in valid_rows:
                 try:
                     # Create panel with the grid data
+                    material_value = str(row['色']).strip() if str(row['色']).strip() else 'SGCC'
                     panel = Panel(
                         id=str(row['製造番号']).strip(),
                         width=float(row['W']),
                         height=float(row['H']),
                         quantity=int(row['数量']),
-                        material=str(row['色']).strip() if str(row['色']).strip() else 'SGCC',
+                        material=material_value,
                         thickness=0.5,  # Default thickness
                         pi_code=str(row['PI']).strip()
                     )
+
+                    # Calculate expanded dimensions using PI code
+                    if panel.pi_code:
+                        from core.pi_manager import get_pi_manager
+                        pi_manager = get_pi_manager()
+                        pi_info = pi_manager.get_pi_code(panel.pi_code)
+                        if pi_info:
+                            expanded_w, expanded_h = pi_info.get_expanded_dimensions(
+                                panel.width, panel.height
+                            )
+                            panel.expanded_width = expanded_w
+                            panel.expanded_height = expanded_h
+
                     new_panels.append(panel)
                 except Exception as e:
                     st.error(f"行データ変換エラー / Row conversion error: {str(e)}")
@@ -296,6 +307,44 @@ class PanelInputComponent:
                 if 'panels' not in st.session_state:
                     st.session_state.panels = []
                 st.session_state.panels.extend(new_panels)
+
+                # Create panel_data_df for result formatting
+                import pandas as pd
+                from core.pi_manager import get_pi_manager
+                pi_manager = get_pi_manager()
+
+                panel_data = []
+                for row in valid_rows:
+                    original_w = float(row['W'])
+                    original_h = float(row['H'])
+                    pi_code = str(row['PI']).strip()
+
+                    # Calculate expanded dimensions
+                    if pi_code:
+                        pi_info = pi_manager.get_pi_code(pi_code)
+                        if pi_info:
+                            expanded_w, expanded_h = pi_info.get_expanded_dimensions(
+                                original_w, original_h
+                            )
+                        else:
+                            expanded_w, expanded_h = original_w, original_h
+                    else:
+                        expanded_w, expanded_h = original_w, original_h
+
+                    panel_data.append({
+                        '行番号': len(panel_data) + 1,
+                        'Panel ID': str(row['製造番号']).strip(),
+                        'Ｗ寸法': original_w,
+                        'Ｈ寸法': original_h,
+                        '数量': int(row['数量']),
+                        '材質': str(row['色']).strip() if str(row['色']).strip() else 'SGCC',
+                        '板厚': 0.5,  # Default thickness
+                        'ＰＩコード': pi_code,
+                        '展開Ｗ': expanded_w,
+                        '展開Ｈ': expanded_h,
+                    })
+                st.session_state.panel_data_df = pd.DataFrame(panel_data)
+
                 st.success(f"{len(new_panels)}個のパネルを追加しました / Added {len(new_panels)} panels")
                 st.rerun()
             else:
@@ -323,19 +372,7 @@ class PanelInputComponent:
 
             df = pd.DataFrame(data)
 
-            # Display summary metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("パネル種類 / Panel Types", len(st.session_state.panels))
-            with col2:
-                total_qty = sum(p.quantity for p in st.session_state.panels)
-                st.metric("総数量 / Total Qty", total_qty)
-            with col3:
-                total_area = sum(p.area * p.quantity for p in st.session_state.panels)
-                st.metric("総面積 / Total Area", f"{total_area:,.0f} mm²")
-            with col4:
-                materials = set(p.material for p in st.session_state.panels)
-                st.metric("材質種類 / Material Types", len(materials))
+            # Summary metrics removed per user request
 
             # Display the data table
             st.dataframe(
@@ -377,21 +414,7 @@ class PanelInputComponent:
             df = pd.DataFrame(panel_data)
             st.dataframe(df, use_container_width=True)
 
-            # Summary
-            total_panels = len(st.session_state.panels)
-            total_quantity = sum(p.quantity for p in st.session_state.panels)
-            total_area = sum(p.area * p.quantity for p in st.session_state.panels)
-            materials = set(p.material for p in st.session_state.panels)
-
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("パネル種類 / Panel Types", total_panels)
-            with col2:
-                st.metric("総数量 / Total Quantity", total_quantity)
-            with col3:
-                st.metric("総面積 / Total Area (mm²)", f"{total_area:,.0f}")
-            with col4:
-                st.metric("材質種類 / Material Types", len(materials))
+            # Summary metrics removed per user request
 
             # Remove panel functionality
             if st.button("最後のパネルを削除 / Remove Last Panel"):
@@ -554,8 +577,7 @@ class OptimizationSettingsComponent:
             kerf_width=kerf_width,
             allow_rotation=allow_rotation,
             material_separation=material_separation,
-            time_budget=86400.0,  # 24 hours - effectively unlimited for optimization
-            target_efficiency=0.1,  # Very low target to avoid efficiency warnings
+            target_efficiency=0.75,  # Standard 75% efficiency target
             enable_gpu=gpu_acceleration,
             gpu_memory_limit=2048
         )

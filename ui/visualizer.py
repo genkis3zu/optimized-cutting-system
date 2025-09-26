@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Visual Cutting Layout Display
 視覚的切断レイアウト表示
@@ -46,7 +48,10 @@ class CuttingLayoutVisualizer:
                             show_cut_lines: bool = True,
                             show_measurements: bool = True) -> go.Figure:
         """Create interactive cutting layout visualization with swapped axes
-        X-axis: Height (horizontal), Y-axis: Width (vertical)"""
+        X-axis: Height (horizontal), Y-axis: Width (vertical)
+
+        IMPORTANT: Uses actual cutting dimensions (expanded dimensions) for all panel placement
+        """
 
         # Create figure
         fig = go.Figure()
@@ -65,6 +70,9 @@ class CuttingLayoutVisualizer:
         panel_ids = list(set(placed.panel.id for placed in result.panels))
         if not self.panel_colors:
             self.panel_colors = self.generate_color_palette(panel_ids)
+
+        # Debug: Verify panel dimensions are using expanded values
+        self._verify_panel_dimensions(result.panels)
 
         # Add placed panels - SWAPPED: X=Height, Y=Width
         for i, placed_panel in enumerate(result.panels):
@@ -90,7 +98,17 @@ class CuttingLayoutVisualizer:
             center_y = placed_panel.x + placed_panel.actual_width / 2
 
             rotation_text = " (R)" if placed_panel.rotated else ""
-            label_text = f"{panel.id}<br>{placed_panel.actual_width:.0f}×{placed_panel.actual_height:.0f}{rotation_text}"
+            # Show cutting dimensions (expanded dimensions) clearly
+            cutting_w = placed_panel.actual_width
+            cutting_h = placed_panel.actual_height
+            original_w = panel.width
+            original_h = panel.height
+
+            # If expanded dimensions are different from original, show both
+            if panel.expanded_width is not None and panel.expanded_height is not None:
+                label_text = f"{panel.id}<br>展開:{cutting_w:.0f}×{cutting_h:.0f}<br>完成:{original_w:.0f}×{original_h:.0f}{rotation_text}"
+            else:
+                label_text = f"{panel.id}<br>寸法:{cutting_w:.0f}×{cutting_h:.0f}{rotation_text}"
 
             fig.add_annotation(
                 x=center_x,
@@ -110,7 +128,7 @@ class CuttingLayoutVisualizer:
                 fig.add_annotation(
                     x=center_x,
                     y=placed_panel.x - 20,
-                    text=f"H:{placed_panel.actual_height:.0f}mm",
+                    text=f"展開H:{placed_panel.actual_height:.0f}mm",
                     showarrow=False,
                     font=dict(size=8, color="blue")
                 )
@@ -119,7 +137,7 @@ class CuttingLayoutVisualizer:
                 fig.add_annotation(
                     x=placed_panel.y - 30,
                     y=center_y,
-                    text=f"W:{placed_panel.actual_width:.0f}mm",
+                    text=f"展開W:{placed_panel.actual_width:.0f}mm",
                     showarrow=False,
                     font=dict(size=8, color="blue"),
                     textangle=90
@@ -162,9 +180,9 @@ class CuttingLayoutVisualizer:
             # Add panel boundaries as potential cut lines - SWAPPED
             # Original coordinates mapped to new coordinate system
             h_lines.add(placed_panel.x)  # Left edge (now width)
-            h_lines.add(placed_panel.x + placed_panel.actual_width)  # Right edge (now width)
+            h_lines.add(placed_panel.x + placed_panel.expanded_width)  # Right edge (now width)
             v_lines.add(placed_panel.y)  # Bottom edge (now height)
-            v_lines.add(placed_panel.y + placed_panel.actual_height)  # Top edge (now height)
+            v_lines.add(placed_panel.y + placed_panel.expanded_height)  # Top edge (now height)
 
         # Add sheet boundaries - SWAPPED
         h_lines.add(0)
@@ -193,6 +211,29 @@ class CuttingLayoutVisualizer:
                     line=dict(color="red", width=1, dash="dash"),
                     opacity=0.5
                 )
+
+    def _verify_panel_dimensions(self, placed_panels):
+        """Verify that panel dimensions are using expanded (cutting) values"""
+        print("=== Panel Dimension Verification ===")
+        for placed_panel in placed_panels:
+            panel = placed_panel.panel
+            print(f"Panel {panel.id}:")
+            print(f"  Original: {panel.width}x{panel.height}")
+            print(f"  Panel.expanded: {panel.expanded_width}x{panel.expanded_height}")
+            print(f"  Panel.cutting: {panel.cutting_width}x{panel.cutting_height}")
+            print(f"  PlacedPanel.expanded: {placed_panel.expanded_width}x{placed_panel.expanded_height}")
+            print(f"  Rotated: {placed_panel.rotated}")
+
+            # Check consistency
+            if panel.expanded_width is not None and panel.expanded_height is not None:
+                if (abs(panel.cutting_width - panel.expanded_width) > 0.1 or
+                    abs(panel.cutting_height - panel.expanded_height) > 0.1):
+                    print(f"  [WARNING] Cutting != Expanded dimensions!")
+                else:
+                    print(f"  [OK] Cutting dimensions match expanded dimensions")
+            else:
+                print(f"  [INFO] Using original dimensions (no PI expansion)")
+            print()
 
     def create_efficiency_chart(self, results: List[PlacementResult]) -> go.Figure:
         """Create efficiency comparison chart"""
@@ -366,22 +407,8 @@ def render_panel_details(panels: List, show_validation: bool = True):
 
     st.subheader("📋 パネル詳細情報 / Panel Details")
 
-    # Summary metrics
-    col1, col2, col3, col4 = st.columns(4)
-
-    total_panels = len(panels)
-    total_quantity = sum(p.quantity for p in panels)
-    total_area = sum(p.area * p.quantity for p in panels)
+    # Summary metrics removed per user request
     materials = set(p.material for p in panels)
-
-    with col1:
-        st.metric("パネル種類 / Panel Types", total_panels)
-    with col2:
-        st.metric("総数量 / Total Quantity", total_quantity)
-    with col3:
-        st.metric("総面積 / Total Area (mm²)", f"{total_area:,.0f}")
-    with col4:
-        st.metric("材質種類 / Material Types", len(materials))
 
     # Panel data table
     panel_data = []
@@ -411,7 +438,7 @@ def render_panel_details(panels: List, show_validation: bool = True):
             is_valid, message = manager.validate_panel_against_inventory(
                 panel.material, panel.thickness, panel.width, panel.height
             )
-            validation_results.append("✅" if is_valid else "⚠️")
+            validation_results.append("[OK]" if is_valid else "[WARN]")
 
         df['検証/Validation'] = validation_results
 
@@ -441,33 +468,7 @@ def render_panel_details(panels: List, show_validation: bool = True):
     # Display table
     st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
-    # Material breakdown chart
-    if len(materials) > 1:
-        st.subheader("材質別分布 / Material Distribution")
-
-        material_summary = []
-        for material in materials:
-            material_panels = [p for p in panels if p.material == material]
-            material_quantity = sum(p.quantity for p in material_panels)
-            material_area = sum(p.area * p.quantity for p in material_panels)
-
-            material_summary.append({
-                'Material': material,
-                'Panels': len(material_panels),
-                'Quantity': material_quantity,
-                'Area': material_area
-            })
-
-        df_summary = pd.DataFrame(material_summary)
-
-        # Create pie chart
-        fig = px.pie(
-            df_summary,
-            values='Quantity',
-            names='Material',
-            title="材質別数量分布 / Quantity Distribution by Material"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Material breakdown chart removed per user request
 
 
 def render_cutting_visualization(results: List[PlacementResult]):
@@ -481,10 +482,6 @@ def render_cutting_visualization(results: List[PlacementResult]):
     visualizer = CuttingLayoutVisualizer()
 
     # Initialize session state for visualization options if not exists
-    if 'viz_show_cut_lines' not in st.session_state:
-        st.session_state.viz_show_cut_lines = True
-    if 'viz_show_measurements' not in st.session_state:
-        st.session_state.viz_show_measurements = True
     if 'viz_selected_sheet' not in st.session_state:
         st.session_state.viz_selected_sheet = 0
     if 'viz_show_details' not in st.session_state:
@@ -498,13 +495,11 @@ def render_cutting_visualization(results: List[PlacementResult]):
     with col1:
         show_cut_lines = st.checkbox(
             "切断線表示 / Show Cut Lines",
-            value=st.session_state.viz_show_cut_lines,
             key="viz_show_cut_lines"
         )
     with col2:
         show_measurements = st.checkbox(
             "寸法表示 / Show Measurements",
-            value=st.session_state.viz_show_measurements,
             key="viz_show_measurements"
         )
     with col3:
@@ -513,8 +508,11 @@ def render_cutting_visualization(results: List[PlacementResult]):
             range(len(results)),
             format_func=lambda x: f"Sheet {x+1} ({results[x].material_block})",
             index=min(st.session_state.viz_selected_sheet, len(results)-1),
-            key="viz_selected_sheet"
+            key="sheet_selector"
         )
+
+        # Update session state when selectbox value changes (prevent unnecessary reruns)
+        st.session_state.viz_selected_sheet = sheet_index
 
     # Individual sheet layout
     st.write("### 個別シートレイアウト / Individual Sheet Layout")

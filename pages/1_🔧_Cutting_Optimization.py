@@ -77,60 +77,21 @@ def render_panel_input_section():
                     validation_success.append(f"✅ Panel {panel.id}: {message}")
 
             if validation_issues:
-                st.warning("⚠️ 材料検証エラーがあります / Material validation issues found")
-                for issue in validation_issues:
-                    st.text(issue)
-                st.info("💡 材料管理ページで在庫を確認・追加してください / Please check inventory in Material Management page")
+                # Show material validation issues in a collapsible expander
+                with st.expander(f"⚠️ 材料検証情報 ({len(validation_issues)}件) / Material Validation Info"):
+                    st.write("**検証結果 / Validation Results:**")
+                    for issue in validation_issues:
+                        st.text(issue)
+                    st.info("💡 材料管理ページで在庫を確認・追加してください / Please check inventory in Material Management page")
             else:
                 st.success("✅ すべての材料が検証されました / All materials validated")
 
+            # Show successful validations in details section if any
             if validation_success and st.checkbox("詳細を表示 / Show details", key="validation_details"):
                 for success in validation_success:
                     st.text(success)
 
-        # Enhanced panel summary
-        col1, col2, col3, col4 = st.columns(4)
-
-        total_panels = len(panels)
-        total_quantity = sum(p.quantity for p in panels)
-        total_area = sum(p.area * p.quantity for p in panels)
-        materials = set(p.material for p in panels)
-
-        with col1:
-            st.markdown(f"""
-            <div class="metric-item">
-                <h4 style="color: #1f77b4; margin: 0;">パネル種類</h4>
-                <h2 style="margin: 0;">{total_panels}</h2>
-                <p style="margin: 0; color: #666;">Panel Types</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col2:
-            st.markdown(f"""
-            <div class="metric-item">
-                <h4 style="color: #2ca02c; margin: 0;">総数量</h4>
-                <h2 style="margin: 0;">{total_quantity}</h2>
-                <p style="margin: 0; color: #666;">Total Quantity</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            st.markdown(f"""
-            <div class="metric-item">
-                <h4 style="color: #ff7f0e; margin: 0;">総面積</h4>
-                <h2 style="margin: 0;">{total_area:,.0f}</h2>
-                <p style="margin: 0; color: #666;">Total Area (mm²)</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col4:
-            st.markdown(f"""
-            <div class="metric-item">
-                <h4 style="color: #d62728; margin: 0;">材質種類</h4>
-                <h2 style="margin: 0;">{len(materials)}</h2>
-                <p style="margin: 0; color: #666;">Material Types</p>
-            </div>
-            """, unsafe_allow_html=True)
+        # Enhanced panel summary removed per user request
 
         # Panel details table
         if st.checkbox("📊 パネル詳細を表示 / Show Panel Details", value=False):
@@ -169,47 +130,6 @@ def render_panel_details_table(panels: List[Panel]):
         hide_index=True
     )
 
-    # Material breakdown
-    material_summary = {}
-    for panel in panels:
-        if panel.material not in material_summary:
-            material_summary[panel.material] = {
-                'count': 0,
-                'quantity': 0,
-                'total_area': 0
-            }
-        material_summary[panel.material]['count'] += 1
-        material_summary[panel.material]['quantity'] += panel.quantity
-        material_summary[panel.material]['total_area'] += panel.area * panel.quantity
-
-    # Display material breakdown
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("#### 📊 材質別サマリー / Material Summary")
-        summary_data = []
-        for material, data in material_summary.items():
-            summary_data.append({
-                '材質 / Material': material,
-                'パネル種類 / Types': data['count'],
-                '総数量 / Total Qty': data['quantity'],
-                '総面積 / Total Area (mm²)': f"{data['total_area']:,.0f}"
-            })
-
-        summary_df = pd.DataFrame(summary_data)
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-
-    with col2:
-        # Material pie chart
-        import plotly.express as px
-        if material_summary:
-            fig = px.pie(
-                values=list(data['total_area'] for data in material_summary.values()),
-                names=list(material_summary.keys()),
-                title="材質別面積分布 / Area Distribution by Material"
-            )
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
 
 
 def render_optimization_settings():
@@ -361,6 +281,15 @@ def run_optimization_with_progress(panels: List[Panel], algorithm: str, constrai
         - 処理段階 / Stage: アルゴリズム実行中 / Algorithm running
         """)
 
+        # Display GPU acceleration status
+        gpu_status = "🚀 有効 / Enabled" if constraints.enable_gpu else "❌ 無効 / Disabled"
+        detail_text.markdown(f"""
+        **📊 最適化設定 / Optimization Settings:**
+        - アルゴリズム / Algorithm: {algorithm_hint}
+        - GPUアクセラレーション / GPU Acceleration: {gpu_status}
+        - パネル数 / Panel count: {len(panels)}
+        """)
+
         # Actual optimization call
         results = engine.optimize(
             panels=panels,
@@ -442,7 +371,7 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
     # Create formatted result table like result.txt
     st.markdown("### 📊 切断割当表 / Cutting Assignment Table")
 
-    if panels and hasattr(st.session_state, 'panel_data_df'):
+    if panels and hasattr(st.session_state, 'panel_data_df') and st.session_state.panel_data_df is not None:
         formatter = ResultFormatter()
 
         # Format results to match result.txt format
@@ -455,6 +384,55 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
             height=400,
             hide_index=True,  # This prevents the 0-based index from showing as a separate column
             column_config={
+                "製番": st.column_config.TextColumn(
+                    "製番",
+                    help="製造番号",
+                    width="small",
+                ),
+                "ＰＩコード": st.column_config.TextColumn(
+                    "ＰＩコード",
+                    help="PI識別コード",
+                    width="small",
+                ),
+                "品名": st.column_config.TextColumn(
+                    "品名",
+                    help="部材名/品名",
+                    width="medium",
+                ),
+                "Ｗ寸法": st.column_config.NumberColumn(
+                    "Ｗ寸法",
+                    help="幅寸法(mm)",
+                    format="%.0f",
+                ),
+                "Ｈ寸法": st.column_config.NumberColumn(
+                    "Ｈ寸法",
+                    help="高さ寸法(mm)",
+                    format="%.0f",
+                ),
+                "数量": st.column_config.NumberColumn(
+                    "数量",
+                    help="パネル数量",
+                    format="%.0f",
+                ),
+                "色": st.column_config.TextColumn(
+                    "色",
+                    help="材質・色指定",
+                ),
+                "板厚": st.column_config.NumberColumn(
+                    "板厚",
+                    help="板厚(mm)",
+                    format="%.1f",
+                ),
+                "展開Ｈ": st.column_config.NumberColumn(
+                    "展開Ｈ",
+                    help="展開高さ(mm)",
+                    format="%.0f",
+                ),
+                "展開Ｗ": st.column_config.NumberColumn(
+                    "展開Ｗ",
+                    help="展開幅(mm)",
+                    format="%.0f",
+                ),
                 "鋼板サイズ": st.column_config.TextColumn(
                     "鋼板サイズ",
                     help="使用する母材のサイズ",
@@ -464,32 +442,37 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
                     "資材コード",
                     help="母材の資材コード",
                 ),
+                "シート数量": st.column_config.NumberColumn(
+                    "シート数量",
+                    help="使用シート数",
+                    format="%.0f",
+                ),
                 "ｺﾒﾝﾄ": st.column_config.TextColumn(
                     "ｺﾒﾝﾄ",
                     help="同じシートに配置される行番号",
+                ),
+                "面積": st.column_config.NumberColumn(
+                    "面積",
+                    help="シート面積(mm²)",
+                    format="%.0f",
+                ),
+                "製品総面積": st.column_config.NumberColumn(
+                    "製品総面積",
+                    help="製品の総面積(mm²)",
+                    format="%.0f",
+                ),
+                "素材総面積": st.column_config.NumberColumn(
+                    "素材総面積",
+                    help="素材の総面積(mm²)",
+                    format="%.0f",
                 ),
                 "歩留まり率": st.column_config.TextColumn(
                     "歩留まり率",
                     help="材料使用効率",
                 ),
-                "製品総面積": st.column_config.NumberColumn(
-                    "製品総面積",
-                    help="製品の総面積",
-                    format="%.0f",
-                ),
-                "素材総面積": st.column_config.NumberColumn(
-                    "素材総面積",
-                    help="素材の総面積",
-                    format="%.0f",
-                ),
-                "面積": st.column_config.NumberColumn(
-                    "面積",
-                    help="シート面積",
-                    format="%.0f",
-                ),
                 "差": st.column_config.NumberColumn(
                     "差",
-                    help="素材面積と製品面積の差",
+                    help="素材面積 - 製品面積(mm²)",
                     format="%.0f",
                 ),
             }
@@ -503,116 +486,16 @@ def render_enhanced_results(results: List[PlacementResult], panels: List[Panel] 
             file_name="optimization_result.txt",
             mime="text/tab-separated-values",
         )
+    else:
+        # No fallback table needed - user requested removal
+        if results:
+            st.info("💡 切断割当表を表示するには、データグリッドからパネルを追加してください")
+        else:
+            st.warning("切断割当表を表示するための結果データがありません")
 
     st.markdown("---")
 
-    # Debug information - Show detailed placement information
-    st.markdown("### 📋 配置詳細 / Placement Details")
 
-    # Count panels per material and sheet
-    material_summary = {}
-    for idx, result in enumerate(results, 1):
-        material = result.sheet.material if hasattr(result, 'sheet') else 'Unknown'
-        sheet_dims = f"{result.sheet.width}x{result.sheet.height}" if hasattr(result, 'sheet') else 'Unknown'
-
-        if material not in material_summary:
-            material_summary[material] = []
-
-        panel_info = {
-            'sheet_num': idx,
-            'sheet_dims': sheet_dims,
-            'panels': result.panels if hasattr(result, 'panels') else [],
-            'efficiency': result.efficiency if hasattr(result, 'efficiency') else 0
-        }
-        material_summary[material].append(panel_info)
-
-    # Display material-wise breakdown
-    for material, sheets in material_summary.items():
-        st.markdown(f"**材質 / Material: {material}**")
-        total_panels_for_material = sum(len(sheet['panels']) for sheet in sheets)
-        st.write(f"- シート数 / Sheets: {len(sheets)}")
-        st.write(f"- 配置パネル数 / Placed panels: {total_panels_for_material}")
-
-        # Show each sheet's details
-        for sheet in sheets:
-            with st.expander(f"シート #{sheet['sheet_num']} ({sheet['sheet_dims']}) - {len(sheet['panels'])} panels - {sheet['efficiency']:.1%} efficiency"):
-                if sheet['panels']:
-                    panel_list = []
-                    for panel in sheet['panels']:
-                        # Handle PlacedPanel objects (panel.panel.id) vs Panel objects (panel.id)
-                        if hasattr(panel, 'panel'):
-                            # PlacedPanel object
-                            panel_str = f"{panel.panel.id}: {panel.panel.width}x{panel.panel.height}"
-                            if hasattr(panel.panel, 'pi_code'):
-                                panel_str += f" (PI: {panel.panel.pi_code})"
-                        else:
-                            # Panel object
-                            panel_str = f"{panel.id}: {panel.width}x{panel.height}"
-                            if hasattr(panel, 'pi_code'):
-                                panel_str += f" (PI: {panel.pi_code})"
-                        panel_list.append(panel_str)
-                    st.write("配置パネル / Placed panels:")
-                    for p in panel_list:
-                        st.write(f"  - {p}")
-                else:
-                    st.write("パネルなし / No panels")
-
-    st.markdown("---")
-
-    # Enhanced summary metrics
-    total_panels = sum(len(result.panels) for result in results)
-    avg_efficiency = sum(result.efficiency for result in results) / len(results)
-    total_cost = sum(result.cost for result in results)
-    total_time = sum(result.processing_time for result in results)
-    total_waste_area = sum(result.waste_area for result in results)
-
-    # Metrics grid
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        st.markdown(f"""
-        <div class="metric-item">
-            <h4 style="color: #1f77b4; margin: 0;">使用シート数</h4>
-            <h2 style="margin: 0;">{len(results)}</h2>
-            <p style="margin: 0; color: #666;">Sheets Used</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-        <div class="metric-item">
-            <h4 style="color: #2ca02c; margin: 0;">配置パネル数</h4>
-            <h2 style="margin: 0;">{total_panels}</h2>
-            <p style="margin: 0; color: #666;">Placed Panels</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-        <div class="metric-item">
-            <h4 style="color: #ff7f0e; margin: 0;">平均効率</h4>
-            <h2 style="margin: 0;">{avg_efficiency:.1%}</h2>
-            <p style="margin: 0; color: #666;">Average Efficiency</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-        <div class="metric-item">
-            <h4 style="color: #d62728; margin: 0;">総コスト</h4>
-            <h2 style="margin: 0;">¥{total_cost:,.0f}</h2>
-            <p style="margin: 0; color: #666;">Total Cost</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col5:
-        st.markdown(f"""
-        <div class="metric-item">
-            <h4 style="color: #9467bd; margin: 0;">廃棄面積</h4>
-            <h2 style="margin: 0;">{total_waste_area:,.0f}</h2>
-            <p style="margin: 0; color: #666;">Waste Area (mm²)</p>
-        </div>
-        """, unsafe_allow_html=True)
 
     # Navigation to detailed analysis
     render_analysis_navigation(results)
@@ -804,9 +687,6 @@ def save_optimization_results(results: List[PlacementResult]):
 
         st.success("✅ 結果を保存しました / Results saved successfully")
 
-        # Show summary
-        with st.expander("📊 保存された結果サマリー / Saved Results Summary", expanded=False):
-            st.json(results_data['summary'])
 
     except Exception as e:
         st.error(f"結果保存エラー: {str(e)}")

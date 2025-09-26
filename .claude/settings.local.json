@@ -18,7 +18,19 @@
       "Bash(sqlite3:*)",
       "Bash(rm:*)",
       "Bash(chmod:*)",
-      "mcp__filesystem__directory_tree"
+      "mcp__filesystem__directory_tree",
+      "Bash(timeout 30 python tests/test_streamlit_startup.py)",
+      "Bash(streamlit run:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__filesystem__read_multiple_files",
+      "Bash(xargs:*)",
+      "WebSearch",
+      "SlashCommand(/sc:git pushまでしてください)"
     ],
     "deny": [],
     "ask": []

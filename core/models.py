@@ -187,13 +187,23 @@ class PlacedPanel:
 
     @property
     def actual_width(self) -> float:
-        """Get actual width considering rotation"""
-        return self.panel.height if self.rotated else self.panel.width
+        """Get actual cutting width considering rotation"""
+        return self.panel.cutting_height if self.rotated else self.panel.cutting_width
 
     @property
     def actual_height(self) -> float:
-        """Get actual height considering rotation"""
-        return self.panel.width if self.rotated else self.panel.height
+        """Get actual cutting height considering rotation"""
+        return self.panel.cutting_width if self.rotated else self.panel.cutting_height
+
+    @property
+    def expanded_width(self) -> float:
+        """Get expanded cutting width considering rotation (clearer naming)"""
+        return self.panel.cutting_height if self.rotated else self.panel.cutting_width
+
+    @property
+    def expanded_height(self) -> float:
+        """Get expanded cutting height considering rotation (clearer naming)"""
+        return self.panel.cutting_width if self.rotated else self.panel.cutting_height
 
     @property
     def bounds(self) -> Tuple[float, float, float, float]:
@@ -329,7 +339,6 @@ class OptimizationConstraints:
     min_waste_piece: float = 50.0  # mm - minimum usable waste piece
     allow_rotation: bool = True
     material_separation: bool = False  # Enable multi-sheet optimization by default
-    time_budget: float = 30.0  # seconds
     enable_gpu: bool = True  # GPU acceleration (Intel Iris Xe)
     gpu_memory_limit: int = 2048  # MB - GPU memory limit
     target_efficiency: float = 0.75  # 75%
@@ -380,4 +389,3 @@ class OptimizationRequest(BaseModel):
     panels: List[PanelAPI]
     constraints: Optional[Dict[str, Any]] = None
     algorithm: Optional[str] = "AUTO"
-    time_budget: float = Field(30.0, ge=1.0, le=300.0)

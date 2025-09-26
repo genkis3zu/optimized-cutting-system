@@ -170,7 +170,7 @@ class OptimizationEngine:
 
         # Calculate problem characteristics
         complexity = self._calculate_problem_complexity(panels)
-        time_budget = constraints.time_budget
+        time_budget = 60.0  # Default reasonable time for algorithm selection
         panel_count = sum(p.quantity for p in panels)
         total_area = sum(p.area * p.quantity for p in panels)
 
@@ -197,7 +197,7 @@ class OptimizationEngine:
         available_algorithms = list(self.algorithms.keys())
 
         # Priority 1: Small, simple problems - use FFD for speed
-        if panel_count <= 10 and adjusted_complexity < 0.3 and time_budget >= 1.0:
+        if panel_count <= 10 and adjusted_complexity < 0.3:
             if "FFD" in available_algorithms:
                 self.logger.info("Selected FFD: small simple problem, target 70-75% efficiency")
                 return "FFD"
@@ -206,7 +206,7 @@ class OptimizationEngine:
                 return "MockFFD"
 
         # Priority 2: Medium problems with good time budget - use BFD if available
-        if panel_count <= 50 and adjusted_complexity < 0.7 and time_budget >= 5.0:
+        if panel_count <= 50 and adjusted_complexity < 0.7:
             if "BFD" in available_algorithms:
                 self.logger.info("Selected BFD: medium problem, target 80-85% efficiency")
                 return "BFD"
@@ -215,7 +215,7 @@ class OptimizationEngine:
                 return "FFD"
 
         # Priority 3: Large/complex problems with sufficient time - use HYBRID
-        if time_budget >= 30.0 and total_area > 100000:  # Large cutting area
+        if total_area > 100000:  # Large cutting area
             if "HYBRID" in available_algorithms:
                 self.logger.info("Selected HYBRID: large complex problem, target 85%+ efficiency")
                 return "HYBRID"
@@ -224,7 +224,7 @@ class OptimizationEngine:
                 return "BFD"
 
         # Priority 4: Time-constrained problems
-        if time_budget < 1.0:
+        # Always use FFD for very simple cases
             if "FFD_FAST" in available_algorithms:
                 self.logger.info("Selected FFD_FAST: very tight time constraint")
                 return "FFD_FAST"
@@ -393,10 +393,13 @@ class OptimizationEngine:
 
         algorithm = self.algorithms[algorithm_name]
 
+        # Log GPU acceleration status
+        gpu_status = "enabled" if constraints.enable_gpu else "disabled"
         self.logger.info(
             f"Starting optimization with {algorithm_name} "
             f"for {len(panels)} panel types, "
-            f"total quantity: {sum(p.quantity for p in panels)}"
+            f"total quantity: {sum(p.quantity for p in panels)}, "
+            f"GPU acceleration: {gpu_status}"
         )
 
         # Calculate expanded dimensions using PI codes
@@ -465,7 +468,7 @@ class OptimizationEngine:
                                 min_waste_piece=constraints.min_waste_piece,
                                 allow_rotation=constraints.allow_rotation,
                                 material_separation=False,  # Already separated
-                                time_budget=min(30.0, constraints.time_budget / len(material_groups)),  # Reasonable timeout per material
+                                # Process each material group independently
                                 target_efficiency=constraints.target_efficiency
                             )
 
@@ -555,7 +558,7 @@ class OptimizationEngine:
                             min_waste_piece=constraints.min_waste_piece,
                             allow_rotation=constraints.allow_rotation,
                             material_separation=False,
-                            time_budget=constraints.time_budget / max_sheets,  # Distribute time budget
+                            # Optimize each sheet independently
                             target_efficiency=constraints.target_efficiency
                         )
 
@@ -707,6 +710,12 @@ class OptimizationEngine:
 
         def run_optimization():
             try:
+                # Log GPU usage for this algorithm run
+                if constraints.enable_gpu:
+                    self.logger.info(f"Running {algorithm.name} with GPU acceleration (Intel Iris Xe)")
+                else:
+                    self.logger.info(f"Running {algorithm.name} with CPU only")
+
                 return algorithm.optimize(panels, sheet, constraints)
             except Exception as e:
                 self.logger.error(f"Algorithm {algorithm.name} internal error: {e}")
@@ -717,13 +726,9 @@ class OptimizationEngine:
             # Monitor resource usage during optimization
             if not self.performance_monitor.check_resource_limits():
                 self.logger.warning("Resource limits exceeded, using conservative approach")
-                constraints.time_budget = min(constraints.time_budget, 5.0)
 
-            # Use timeout manager for time-limited execution
-            result = self.timeout_manager.execute_with_timeout(
-                run_optimization,
-                timeout=constraints.time_budget
-            )
+            # Execute optimization without timeout
+            result = run_optimization()
 
             if result:
                 # Validate result integrity
@@ -764,7 +769,7 @@ class OptimizationEngine:
 
         except FutureTimeoutError:
             self.logger.warning(
-                f"Algorithm {algorithm.name} timed out after {constraints.time_budget:.1f}s, "
+                f"Algorithm {algorithm.name} failed, "
                 "trying fallback approach"
             )
             # Attempt quick fallback optimization
@@ -808,7 +813,7 @@ class OptimizationEngine:
                 min_waste_piece=constraints.min_waste_piece,
                 allow_rotation=constraints.allow_rotation,
                 material_separation=False,
-                time_budget=2.0,  # Quick fallback
+                # Quick fallback approach
                 target_efficiency=0.3  # Lower target for fallback
             )
 
@@ -1145,6 +1150,8 @@ def create_optimization_engine_with_algorithms(algorithm_names: List[str]) -> Op
         'FFD': lambda: __import__('core.algorithms.ffd', fromlist=['create_ffd_algorithm']).create_ffd_algorithm(),
         'BFD': lambda: __import__('core.algorithms.bfd', fromlist=['create_bfd_algorithm']).create_bfd_algorithm(),
         'HYBRID': lambda: __import__('core.algorithms.hybrid', fromlist=['create_hybrid_algorithm']).create_hybrid_algorithm(),
+        'GENETIC': lambda: __import__('core.algorithms.genetic', fromlist=['create_genetic_algorithm']).create_genetic_algorithm(),
+        'GA': lambda: __import__('core.algorithms.genetic', fromlist=['create_genetic_algorithm']).create_genetic_algorithm(),
     }
 
     registered_count = 0

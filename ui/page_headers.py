@@ -20,11 +20,13 @@ def render_unified_header(title_ja: str, title_en: str, description: str = "", i
     """
     st.markdown(get_common_css(), unsafe_allow_html=True)
 
-    st.markdown("""
+    description_html = f'<p>{description}</p>' if description else ''
+
+    st.markdown(f"""
     <div class="unified-header">
         <h1>{icon} {title_ja}</h1>
         <h3>{title_en}</h3>
-        {f'<p>{description}</p>' if description else ''}
+        {description_html}
     </div>
     """, unsafe_allow_html=True)
 

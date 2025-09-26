@@ -242,6 +242,18 @@ class RobustTextParser:
                 height *= 25.4
                 thickness *= 25.4
 
+            # Calculate expanded dimensions using PI code
+            expanded_width = None
+            expanded_height = None
+            if pi_code and hasattr(self, 'pi_manager') and self.pi_manager:
+                try:
+                    pi_info = self.pi_manager.get_pi_code(pi_code)
+                    if pi_info:
+                        expanded_width, expanded_height = pi_info.get_expanded_dimensions(width, height)
+                except Exception:
+                    # If PI lookup fails, use original dimensions
+                    pass
+
             panel = Panel(
                 id=panel_id,
                 width=width,
@@ -251,7 +263,9 @@ class RobustTextParser:
                 thickness=thickness,
                 priority=priority,
                 allow_rotation=allow_rotation,
-                pi_code=pi_code
+                pi_code=pi_code,
+                expanded_width=expanded_width,
+                expanded_height=expanded_height
             )
 
             return panel, None
@@ -439,7 +453,11 @@ class RobustTextParser:
                 cutting_width, cutting_height = width, height  # Default to finished dimensions
                 if pi_code and pi_manager:
                     try:
-                        expanded_width, expanded_height = pi_manager.get_expansion_for_panel(pi_code, width, height)
+                        pi_info = pi_manager.get_pi_code(pi_code)
+                        if pi_info:
+                            expanded_width, expanded_height = pi_info.get_expanded_dimensions(width, height)
+                        else:
+                            expanded_width, expanded_height = width, height
                         cutting_width, cutting_height = expanded_width, expanded_height
                         self.logger.debug(f"PI {pi_code}: {width}x{height} -> {cutting_width}x{cutting_height}")
                     except Exception as e:
@@ -451,16 +469,16 @@ class RobustTextParser:
 
                 panel = Panel(
                     id=panel_id,
-                    width=cutting_width,  # Use expanded cutting dimensions
-                    height=cutting_height,  # Use expanded cutting dimensions
+                    width=width,  # Keep original finished dimensions
+                    height=height,  # Keep original finished dimensions
                     quantity=quantity,
                     material=material,
                     thickness=thickness,
                     priority=1,
                     allow_rotation=True,
                     pi_code=pi_code,
-                    expanded_width=cutting_width,
-                    expanded_height=cutting_height
+                    expanded_width=cutting_width,  # Expanded cutting dimensions
+                    expanded_height=cutting_height  # Expanded cutting dimensions
                 )
 
                 panels.append(panel)
@@ -611,7 +629,11 @@ class RobustTextParser:
                 cutting_width, cutting_height = width, height  # Default to finished dimensions
                 if pi_code and pi_manager:
                     try:
-                        expanded_width, expanded_height = pi_manager.get_expansion_for_panel(pi_code, width, height)
+                        pi_info = pi_manager.get_pi_code(pi_code)
+                        if pi_info:
+                            expanded_width, expanded_height = pi_info.get_expanded_dimensions(width, height)
+                        else:
+                            expanded_width, expanded_height = width, height
                         cutting_width, cutting_height = expanded_width, expanded_height
                         self.logger.debug(f"PI {pi_code}: {width}x{height} -> {cutting_width}x{cutting_height}")
                     except Exception as e:
@@ -623,16 +645,16 @@ class RobustTextParser:
 
                 panel = Panel(
                     id=panel_id,
-                    width=cutting_width,  # Use expanded cutting dimensions
-                    height=cutting_height,  # Use expanded cutting dimensions
+                    width=width,  # Keep original finished dimensions
+                    height=height,  # Keep original finished dimensions
                     quantity=quantity,
                     material=material,
                     thickness=thickness,
                     priority=1,
                     allow_rotation=True,
                     pi_code=pi_code,
-                    expanded_width=cutting_width,
-                    expanded_height=cutting_height
+                    expanded_width=cutting_width,  # Expanded cutting dimensions
+                    expanded_height=cutting_height  # Expanded cutting dimensions
                 )
                 panels.append(panel)
 
